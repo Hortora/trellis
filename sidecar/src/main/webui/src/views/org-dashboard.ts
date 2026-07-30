@@ -162,7 +162,7 @@ export class TrellisOrgDashboard extends LitElement {
       <div class="section">
         <h2>Slots <span class="count">${slots.length}</span></h2>
         <div class="grid">${slots.map(s => html`
-          <div class="card">
+          <div class="card" style="cursor:pointer" @click=${() => this._openSlot(s.number)}>
             <div class="card-name">Slot ${s.number}</div>
             <div class="card-detail">${s.issue}</div>
             <div class="card-meta">
@@ -226,6 +226,10 @@ export class TrellisOrgDashboard extends LitElement {
       if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
       return `${Math.floor(diff / 86_400_000)}d ago`;
     } catch { return iso; }
+  }
+
+  private _openSlot(slotNumber: number) {
+    location.hash = `#slot/${slotNumber}?root=${encodeURIComponent(this._root)}`;
   }
 
   private async _scan() {
