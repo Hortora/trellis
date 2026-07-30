@@ -1,0 +1,88 @@
+package io.hortora.trellis.terminal;
+
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class TmuxManager {
+
+    public void createSession(String name, String workingDir) throws IOException, InterruptedException {
+        run("tmux", "new-session", "-d", "-s", name, "-c", workingDir);
+    }
+
+    public void killSession(String name) throws IOException, InterruptedException {
+        run("tmux", "kill-session", "-t", name);
+    }
+
+    public boolean hasSession(String name) throws IOException, InterruptedException {
+        var p = new ProcessBuilder("tmux", "has-session", "-t", name)
+                .redirectErrorStream(true).start();
+        p.getInputStream().transferTo(OutputStream.nullOutputStream());
+        return p.waitFor() == 0;
+    }
+
+    public List<String> listSessions(String prefix) throws IOException, InterruptedException {
+        var pb = new ProcessBuilder("tmux", "list-sessions", "-F", "#{session_name}");
+        pb.redirectErrorStream(true);
+        var process = pb.start();
+        int exit = process.waitFor();
+        if (exit != 0) return List.of();
+        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            return reader.lines()
+                    .filter(l -> !l.isBlank() && l.startsWith(prefix))
+                    .collect(Collectors.toList());
+        }
+    }
+
+    public void sendKeys(String name, String text) throws IOException, InterruptedException {
+        run("tmux", "send-keys", "-t", name, "-l", text);
+    }
+
+    public String capturePane(String name, int lines) throws IOException, InterruptedException {
+        var p = new ProcessBuilder("tmux", "capture-pane", "-t", name, "-p", "-S", String.valueOf(-lines))
+                .redirectErrorStream(true).start();
+        try (var in = p.getInputStream()) {
+            var output = new String(in.readAllBytes());
+            p.waitFor();
+            return output;
+        }
+    }
+
+    public void setOption(String name, String key, String value) throws IOException, InterruptedException {
+        run("tmux", "set-option", "-t", name, key, value);
+    }
+
+    public Optional<String> getOption(String name, String key) throws IOException, InterruptedException {
+        var p = new ProcessBuilder("tmux", "show-options", "-t", name, "-v", key)
+                .redirectErrorStream(false).start();
+        var value = new String(p.getInputStream().readAllBytes()).trim();
+        int exit = p.waitFor();
+        if (exit != 0 || value.isBlank()) return Optional.empty();
+        return Optional.of(value);
+    }
+
+    public void resizeWindow(String name, int cols, int rows) throws IOException, InterruptedException {
+        run("tmux", "resize-window", "-t", name, "-x", String.valueOf(cols), "-y", String.valueOf(rows));
+    }
+
+    public void pipePaneToFifo(String name, String fifoPath) throws IOException, InterruptedException {
+        run("tmux", "pipe-pane", "-t", name, "cat > " + fifoPath);
+    }
+
+    public void stopPipePane(String name) throws IOException, InterruptedException {
+        run("tmux", "pipe-pane", "-t", name);
+    }
+
+    private void run(String... command) throws IOException, InterruptedException {
+        var p = new ProcessBuilder(command).redirectErrorStream(true).start();
+        p.getInputStream().transferTo(OutputStream.nullOutputStream());
+        p.waitFor();
+    }
+}
