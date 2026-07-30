@@ -46,6 +46,16 @@
             <artifactId>quarkus-quinoa</artifactId>
             <version>${quinoa.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-pages-push</artifactId>
+            <version>0.2-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-pages-push-runtime</artifactId>
+            <version>0.2-SNAPSHOT</version>
+        </dependency>
         <!-- Test -->
         <dependency>
             <groupId>io.quarkus</groupId>

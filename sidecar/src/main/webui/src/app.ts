@@ -1,8 +1,11 @@
-import { loadSite } from "@casehubio/pages-runtime";
-import { page, title } from "@casehubio/pages-ui";
+import { loadSite, registerPanel } from "@casehubio/pages-runtime";
+import { page, hostPanel } from "@casehubio/pages-ui";
+import "./views/org-dashboard";
+
+registerPanel("org-dashboard", "trellis-org-dashboard");
 
 const app = page("Trellis",
-  title("Trellis — no workspace loaded."),
+  hostPanel("org-dashboard"),
 );
 
 const container = document.getElementById("app");

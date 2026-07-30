@@ -472,7 +472,9 @@ __metadata:
   dependencies:
     "@casehubio/pages-runtime": "npm:*"
     "@casehubio/pages-ui": "npm:*"
+    "@casehubio/pages-ui-components": "npm:*"
     esbuild: "npm:^0.25.0"
+    lit: "npm:^3.3.3"
     typescript: "npm:^5.6.0"
   languageName: unknown
   linkType: soft

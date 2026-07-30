@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@casehubio/pages-runtime": "*",
-    "@casehubio/pages-ui": "*"
+    "@casehubio/pages-ui": "*",
+    "@casehubio/pages-ui-components": "*",
+    "lit": "^3.3.3"
   },
   "resolutions": {
     "@casehubio/pages-component": "portal:./.casehub-packages/packages/pages-component",
