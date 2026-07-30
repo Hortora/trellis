@@ -1,0 +1,18 @@
+# Maven
+sidecar/target/
+
+# Node
+node_modules/
+shell/node_modules/
+sidecar/src/main/webui/node_modules/
+sidecar/src/main/webui/dist/
+sidecar/src/main/webui/.casehub-packages/
+sidecar/src/main/webui/.yarn/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store

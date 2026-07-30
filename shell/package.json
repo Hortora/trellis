@@ -1,0 +1,24 @@
+{
+  "name": "trellis-shell",
+  "version": "0.1.0",
+  "description": "Trellis — Electron shell for the epic delivery engine",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.0"
+  },
+  "build": {
+    "appId": "io.hortora.trellis",
+    "productName": "Trellis",
+    "files": [
+      "main.js",
+      "java-server.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      { "from": "../sidecar/target/quarkus-app", "to": "quarkus-app" }
+    ]
+  }
+}

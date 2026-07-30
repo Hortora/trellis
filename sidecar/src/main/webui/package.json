@@ -1,0 +1,29 @@
+{
+  "name": "trellis-webui",
+  "private": true,
+  "packageManager": "yarn@4.10.3",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@casehubio/pages-runtime": "*",
+    "@casehubio/pages-ui": "*"
+  },
+  "resolutions": {
+    "@casehubio/pages-component": "portal:./.casehub-packages/packages/pages-component",
+    "@casehubio/pages-data": "portal:./.casehub-packages/packages/pages-data",
+    "@casehubio/pages-primitives": "portal:./.casehub-packages/packages/pages-primitives",
+    "@casehubio/pages-runtime": "portal:./.casehub-packages/packages/pages-runtime",
+    "@casehubio/pages-table": "portal:./.casehub-packages/packages/pages-table",
+    "@casehubio/pages-ui": "portal:./.casehub-packages/packages/pages-ui",
+    "@casehubio/pages-ui-components": "portal:./.casehub-packages/packages/pages-ui-components",
+    "@casehubio/pages-ui-tokens": "portal:./.casehub-packages/packages/pages-ui-tokens",
+    "@casehubio/pages-viz": "portal:./.casehub-packages/packages/pages-viz"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

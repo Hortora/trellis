@@ -1,0 +1,11 @@
+{
+  "name": "trellis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Epic delivery engine for spec-driven parallel development",
+  "scripts": {
+    "start": "cd shell && npx electron .",
+    "build:sidecar": "cd sidecar && mvn package -DskipTests",
+    "dev:sidecar": "cd sidecar && mvn quarkus:dev"
+  }
+}
