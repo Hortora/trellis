@@ -84,7 +84,11 @@ public class LifecycleResource {
         } catch (ConcurrentOperationException e) {
             return Response.status(Response.Status.CONFLICT)
                     .entity(Map.of("error", e.getMessage())).build();
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage())).build();
+        } catch (IOException e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage())).build();
         }

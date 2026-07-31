@@ -2,6 +2,7 @@ package io.hortora.trellis.scanner;
 
 import io.casehub.pages.push.EventBroadcaster;
 import io.methvin.watcher.DirectoryWatcher;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
@@ -50,6 +51,13 @@ public class FileWatcherService {
         if (state != null) {state.stop();}
     }
 
+    @PreDestroy
+    void shutdown() {
+        scheduler.shutdownNow();
+        watches.values().forEach(WatchState::stop);
+        watches.clear();
+    }
+
     public WorkspaceModel currentModel(Path root) {
         var state = watches.get(root);
         return state != null ? state.model : null;
@@ -64,8 +72,11 @@ public class FileWatcherService {
         if (state == null) {return;}
 
         var newModel = scanner.scan(root);
-        var oldModel = state.model;
-        state.model = newModel;
+        WorkspaceModel oldModel;
+        synchronized (state) {
+            oldModel = state.model;
+            state.model = newModel;
+        }
 
         if (!oldModel.repos().equals(newModel.repos())) {
             broadcaster.broadcast(TOPIC_REPOS, newModel.repos());

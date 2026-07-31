@@ -29,22 +29,29 @@ public class BootstrapperResource {
     @Inject
     ObjectMapper mapper;
 
-    private ProjectRegistry registry;
+    private volatile ProjectRegistry registry;
 
     private final Map<String, List<SseConnection>> sseClients = new ConcurrentHashMap<>();
 
     record SseConnection(SseEventSink sink, Sse sse) {}
 
     private ProjectRegistry getRegistry() throws IOException {
-        if (registry == null) {
-            try (InputStream is = Thread.currentThread().getContextClassLoader()
-                    .getResourceAsStream("projects.json")) {
-                if (is == null) throw new IOException("projects.json not found on classpath");
-                var entries = mapper.readValue(is, new com.fasterxml.jackson.core.type.TypeReference<List<ProjectEntry>>() {});
-                registry = ProjectRegistry.fromEntries(entries);
+        var r = registry;
+        if (r == null) {
+            synchronized (this) {
+                r = registry;
+                if (r == null) {
+                    try (InputStream is = Thread.currentThread().getContextClassLoader()
+                            .getResourceAsStream("projects.json")) {
+                        if (is == null) throw new IOException("projects.json not found on classpath");
+                        var entries = mapper.readValue(is, new com.fasterxml.jackson.core.type.TypeReference<List<ProjectEntry>>() {});
+                        r = ProjectRegistry.fromEntries(entries);
+                        registry = r;
+                    }
+                }
             }
         }
-        return registry;
+        return r;
     }
 
     @GET

@@ -32,13 +32,14 @@ public class TmuxManager {
         var pb = new ProcessBuilder("tmux", "list-sessions", "-F", "#{session_name}");
         pb.redirectErrorStream(true);
         var process = pb.start();
-        int exit = process.waitFor();
-        if (exit != 0) return List.of();
+        List<String> sessions;
         try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            return reader.lines()
+            sessions = reader.lines()
                     .filter(l -> !l.isBlank() && l.startsWith(prefix))
                     .collect(Collectors.toList());
         }
+        int exit = process.waitFor();
+        return exit == 0 ? sessions : List.of();
     }
 
     public void sendKeys(String name, String text) throws IOException, InterruptedException {

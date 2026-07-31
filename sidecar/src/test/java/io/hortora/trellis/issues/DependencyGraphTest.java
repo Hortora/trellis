@@ -312,6 +312,24 @@ class DependencyGraphTest {
         assertFalse(byKey.get("B").closed());
     }
 
+    @Test
+    void criticalPathEmptyWhenAllNodesClosed() {
+        var graph = new DependencyGraph(
+                Set.of("A", "B", "C"),
+                List.of(dep("B", "A"), dep("C", "B")),
+                Set.of("A", "B", "C")
+        );
+
+        var path = graph.criticalPath();
+        assertTrue(path.isEmpty());
+
+        var counts = graph.cascadeUnlockCounts();
+        assertTrue(counts.isEmpty());
+
+        assertTrue(graph.unblocked().isEmpty());
+        assertTrue(graph.bottlenecks().isEmpty());
+    }
+
     private Dependency dep(String from, String to) {
         return new Dependency(from, to, false);
     }

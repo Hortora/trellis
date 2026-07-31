@@ -57,7 +57,12 @@ public class IssueCache {
         return null;
     }
 
+    private static final java.util.regex.Pattern SAFE_SEGMENT = java.util.regex.Pattern.compile("[a-zA-Z0-9._-]+");
+
     private Path cacheFile(String owner, String repo) {
+        if (!SAFE_SEGMENT.matcher(owner).matches() || !SAFE_SEGMENT.matcher(repo).matches()) {
+            throw new IllegalArgumentException("Invalid owner/repo: " + owner + "/" + repo);
+        }
         return cacheDir.resolve(owner).resolve(repo).resolve("issues.json");
     }
 }

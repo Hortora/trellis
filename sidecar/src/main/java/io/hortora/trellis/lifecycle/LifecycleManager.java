@@ -28,7 +28,7 @@ public class LifecycleManager {
 
     public OperationResult start(Path workspaceRoot, String branch, String issue)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock("start", () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var routeResult = scriptRunner.run("work", "work_router.py",
                     List.of(branch, workspaceRoot.toString(), workspaceRoot.toString()));
             if (!routeResult.success()) return routeResult;
@@ -46,7 +46,7 @@ public class LifecycleManager {
 
     public OperationResult end(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(slotId, () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var rebaseResult = scriptRunner.run("work-end", "land_branch.py",
                     List.of("rebase", workspaceRoot.toString()));
             if (!rebaseResult.success()) return rebaseResult;
@@ -64,7 +64,7 @@ public class LifecycleManager {
 
     public OperationResult pause(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(slotId, () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var wipResult = scriptRunner.run("work-pause", "pause_exec.py",
                     List.of("commit-wip", workspaceRoot.toString()));
             if (!wipResult.success()) return wipResult;
@@ -78,7 +78,7 @@ public class LifecycleManager {
 
     public OperationResult resume(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(slotId, () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var checkoutResult = scriptRunner.run("work-resume", "resume_exec.py",
                     List.of("checkout-branches", workspaceRoot.toString()));
             if (!checkoutResult.success()) return checkoutResult;
@@ -96,7 +96,7 @@ public class LifecycleManager {
 
     public OperationResult slotCreate(Path workspaceRoot, List<String> args)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock("slot-create", () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",
                     prepend("create-slot", args));
             fireWorkspaceChanged(workspaceRoot);
@@ -106,7 +106,7 @@ public class LifecycleManager {
 
     public OperationResult slotMerge(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(slotId, () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",
                     List.of("merge-slot", slotId));
             fireWorkspaceChanged(workspaceRoot);
@@ -116,7 +116,7 @@ public class LifecycleManager {
 
     public OperationResult epicSetup(Path workspaceRoot, List<String> args)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock("epic-setup", () -> {
+        return withLock(workspaceRoot.toString(), () -> {
             var result = scriptRunner.run("work-slot", "epic_manager.py",
                     prepend("write", args));
             fireWorkspaceChanged(workspaceRoot);

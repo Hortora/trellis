@@ -60,9 +60,19 @@ public class IssueEngine {
         );
         pb.redirectErrorStream(false);
         var process = pb.start();
+        var stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try { return new String(process.getErrorStream().readAllBytes()); }
+            catch (java.io.IOException e) { return ""; }
+        });
         var output = process.getInputStream().readAllBytes();
-        var errOutput = new String(process.getErrorStream().readAllBytes());
-        int exit = process.waitFor();
+        var errOutput = stderrFuture.join();
+
+        boolean completed = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroyForcibly();
+            throw new IOException("gh issue list timed out after 60s");
+        }
+        int exit = process.exitValue();
 
         if (exit != 0) {
             throw new IOException("gh issue list failed (exit " + exit + "): " + errOutput);

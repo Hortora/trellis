@@ -23,9 +23,16 @@ public class SseSessionSender implements SessionSender {
     @Override
     public void send(String connectionId, String message) {
         var entry = connections.get(connectionId);
-        if (entry != null && !entry.sink.isClosed()) {
-            entry.sink.send(entry.sse.newEvent(message));
+        if (entry == null) return;
+        if (entry.sink.isClosed()) {
+            connections.remove(connectionId);
+            return;
         }
+        entry.sink.send(entry.sse.newEvent(message));
+    }
+
+    public void purgeClosedConnections() {
+        connections.entrySet().removeIf(e -> e.getValue().sink.isClosed());
     }
 
     private record SinkEntry(SseEventSink sink, Sse sse) {}
