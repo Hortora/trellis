@@ -25,12 +25,14 @@ function route() {
     const dashboard = document.createElement('trellis-org-dashboard') as any;
     dashboard.workspaceRoot = root;
     container.appendChild(dashboard);
-  } else if (hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)$/)) {
-    const epicMatch = hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)$/)!;
+  } else if (hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)) {
+    const epicMatch = hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)!;
+    const rootParam = hash.match(/[?&]root=([^&]+)/);
     const dashboard = document.createElement('trellis-epic-dashboard') as any;
     dashboard.owner = epicMatch[1];
     dashboard.repo = epicMatch[2];
     dashboard.epicNumber = parseInt(epicMatch[3]);
+    if (rootParam) dashboard.workspaceRoot = decodeURIComponent(rootParam[1]);
     container.appendChild(dashboard);
   } else if (hash === '' || hash === '#' || hash === '#launcher') {
     const launcher = document.createElement('trellis-launcher');

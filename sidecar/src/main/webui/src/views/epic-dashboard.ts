@@ -48,10 +48,13 @@ export class TrellisEpicDashboard extends LitElement {
   @property() owner = '';
   @property() repo = '';
   @property({ type: Number }) epicNumber = 0;
+  @property() workspaceRoot = '';
 
   @state() private _data: EpicAnalysis | null = null;
   @state() private _error: string | null = null;
   @state() private _loading = true;
+  @state() private _startingKey: string | null = null;
+  @state() private _startError: string | null = null;
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; font-family: system-ui, sans-serif; }
@@ -91,6 +94,18 @@ export class TrellisEpicDashboard extends LitElement {
     .rec-type-BOTTLENECK { background: #713f12; color: #fde68a; }
     .rec-title { font-size: 0.85rem; font-weight: 500; margin-bottom: 0.2rem; }
     .rec-reason { font-size: 0.75rem; color: #999; }
+    .rec-actions { display: flex; justify-content: flex-end; margin-top: 0.4rem; }
+    .start-btn {
+      padding: 0.2rem 0.6rem; border: 1px solid #1d4ed8; border-radius: 4px;
+      background: transparent; color: #93c5fd; cursor: pointer; font-size: 0.7rem;
+      font-weight: 500; transition: background 0.15s;
+    }
+    .start-btn:hover { background: #1e3a5f; }
+    .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .start-error {
+      margin-top: 0.4rem; padding: 0.4rem 0.6rem; background: #450a0a;
+      border: 1px solid #991b1b; border-radius: 4px; color: #fca5a5; font-size: 0.75rem;
+    }
 
     .timeline-section { padding: 1rem 1.5rem; }
 
@@ -194,14 +209,83 @@ export class TrellisEpicDashboard extends LitElement {
     }
     return html`
       <div class="recs-title">Recommendations</div>
+      ${this._startError ? html`<div class="start-error">${this._startError}</div>` : nothing}
       ${recs.map(r => html`
         <div class="rec-card">
           <span class="rec-type rec-type-${r.type}">${r.type.replace('_', ' ')}</span>
           <div class="rec-title">${r.title}</div>
           <div class="rec-reason">${r.reason}</div>
+          ${this.workspaceRoot ? html`
+            <div class="rec-actions">
+              <button class="start-btn"
+                ?disabled=${this._startingKey !== null}
+                @click=${() => this._startWork(r)}
+              >${this._startingKey === r.key ? 'Starting...' : 'Start'}</button>
+            </div>
+          ` : nothing}
         </div>
       `)}
     `;
+  }
+
+  private _toSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 40)
+      .replace(/-$/, '');
+  }
+
+  private async _startWork(rec: EpicAnalysis['recommendations'][0]) {
+    if (!this.workspaceRoot) return;
+    this._startingKey = rec.key;
+    this._startError = null;
+
+    const m = rec.key.match(/^([^/]+\/[^#]+)#(\d+)$/);
+    if (!m) {
+      this._startError = `Invalid issue key: ${rec.key}`;
+      this._startingKey = null;
+      return;
+    }
+    const issueRepo = m[1];
+    const issueNumber = m[2];
+    const repoName = issueRepo.split('/')[1];
+    const branch = `issue-${issueNumber}-${this._toSlug(rec.title)}`;
+
+    try {
+      const res = await fetch('/api/lifecycle/slot/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceRoot: this.workspaceRoot,
+          args: [
+            this.workspaceRoot,
+            `repos=${repoName}`,
+            `branch=${branch}`,
+            `issue=${issueNumber}`,
+            `issue-repo=${issueRepo}`,
+            `context=${rec.reason}`,
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        this._startError = body?.error ?? `Slot creation failed: HTTP ${res.status}`;
+        return;
+      }
+      const result = await res.json();
+      const slotNumber = result.output?.SLOT_NUMBER;
+      if (slotNumber) {
+        location.hash = `#slot/${slotNumber}?root=${encodeURIComponent(this.workspaceRoot)}`;
+      }
+    } catch (e) {
+      this._startError = `Failed to start work: ${e}`;
+    } finally {
+      this._startingKey = null;
+    }
   }
 
   private async _fetchAnalysis() {

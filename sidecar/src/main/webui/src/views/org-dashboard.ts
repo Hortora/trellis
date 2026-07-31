@@ -300,7 +300,7 @@ export class TrellisOrgDashboard extends LitElement {
   private _openEpic(issueKey: string) {
     const m = issueKey.match(/^([^/]+)\/([^#]+)#(\d+)$/);
     if (m) {
-      location.hash = `#epic/${m[1]}/${m[2]}/${m[3]}`;
+      location.hash = `#epic/${m[1]}/${m[2]}/${m[3]}?root=${encodeURIComponent(this._root)}`;
     }
   }
 }
