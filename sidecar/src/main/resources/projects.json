@@ -1,0 +1,10 @@
+[
+  {
+    "id": "casehub",
+    "name": "CaseHub",
+    "description": "Case management platform — engine, worker, app, scaffold",
+    "parentRepoUrl": "https://github.com/CaseHubPlatform/casehub-parent.git",
+    "setupCommand": "./setup.sh",
+    "expectedStructure": ["engine", "worker", "app", "scaffold"]
+  }
+]
