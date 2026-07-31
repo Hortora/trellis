@@ -4,10 +4,12 @@
   "description": "Trellis — Electron shell for the epic delivery engine",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "jest"
   },
   "devDependencies": {
-    "electron": "^33.4.0"
+    "electron": "^33.4.0",
+    "jest": "^30.4.2"
   },
   "build": {
     "appId": "io.hortora.trellis",
@@ -15,10 +17,18 @@
     "files": [
       "main.js",
       "java-server.js",
-      "preload.js"
+      "preload.js",
+      "window-manager.js",
+      "layout-store.js"
     ],
     "extraResources": [
-      { "from": "../sidecar/target/quarkus-app", "to": "quarkus-app" }
+      {
+        "from": "../sidecar/target/quarkus-app",
+        "to": "quarkus-app"
+      }
     ]
+  },
+  "dependencies": {
+    "electron-store": "^11.0.2"
   }
 }
