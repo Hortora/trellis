@@ -21,19 +21,4 @@ public class IssueResource {
         return Response.ok(issues).build();
     }
 
-    @GET
-    @Path("/{number}/graph")
-    public Response issueGraph(@PathParam("owner") String owner,
-                               @PathParam("repo") String repo,
-                               @PathParam("number") int number) {
-        var issues = engine.fetchIssues(owner, repo);
-        var graph = engine.buildGraph(owner, repo, issues);
-
-        return Response.ok(Map.of(
-                "criticalPath", graph.criticalPath(),
-                "bottlenecks", graph.bottlenecks(),
-                "unblocked", graph.unblocked(),
-                "cycleNodes", graph.cycleNodes()
-        )).build();
-    }
 }

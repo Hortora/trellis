@@ -31,6 +31,15 @@ interface EpicInfo {
   totalChildren: number;
 }
 
+interface EpicSummary {
+  issueKey: string;
+  title: string;
+  criticalPathLength: number;
+  bottleneckCount: number;
+  topRecommendation: { key: string; title: string; type: string; reason: string } | null;
+  progress: { total: number; open: number; closed: number };
+}
+
 interface WorkspaceModel {
   root: string;
   scannedAt: string;
@@ -52,6 +61,7 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _error: string | null = null;
   @state() private _loading = false;
   @state() private _root = '';
+  @state() private _portfolioData = new Map<string, EpicSummary>();
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; }
@@ -185,11 +195,25 @@ export class TrellisOrgDashboard extends LitElement {
         <h2>Epics <span class="count">${epics.length}</span></h2>
         <div class="grid">${epics.map(e => {
           const pct = e.totalChildren > 0 ? (e.completedChildren / e.totalChildren) * 100 : 0;
+          const summary = this._portfolioData.get(e.issue);
           return html`
-            <div class="card">
+            <div class="card" style="cursor:pointer" @click=${() => this._openEpic(e.issue)}>
               <div class="card-name">${e.issue}</div>
               <div class="card-detail">Batch ${e.currentBatch}${e.currentIssue ? ` — ${e.currentIssue}` : ''}</div>
               <div class="card-detail">${e.completedChildren}/${e.totalChildren} children</div>
+              ${summary ? html`
+                <div class="card-meta">
+                  <span class="badge badge-branch">CP: ${summary.criticalPathLength}</span>
+                  ${summary.bottleneckCount > 0 ? html`
+                    <span class="badge badge-pause">BN: ${summary.bottleneckCount}</span>
+                  ` : nothing}
+                </div>
+                ${summary.topRecommendation ? html`
+                  <div class="card-detail" style="margin-top:0.3rem;color:#93c5fd;font-size:0.75rem">
+                    Next: ${summary.topRecommendation.title}
+                  </div>
+                ` : nothing}
+              ` : nothing}
               <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
             </div>
           `;
@@ -244,10 +268,39 @@ export class TrellisOrgDashboard extends LitElement {
         return;
       }
       this._model = await res.json();
+      this._fetchPortfolio();
     } catch (e) {
       this._error = `Failed to scan: ${e}`;
     } finally {
       this._loading = false;
+    }
+  }
+
+  private _fetchPortfolio() {
+    if (!this._model?.epics.length) return;
+    const repos = new Set<string>();
+    for (const e of this._model.epics) {
+      const m = e.issue.match(/^([^/]+\/[^#]+)#/);
+      if (m) repos.add(m[1]);
+    }
+    for (const ownerRepo of repos) {
+      const [owner, repo] = ownerRepo.split('/');
+      fetch(`/api/repos/${owner}/${repo}/portfolio`)
+        .then(r => r.ok ? r.json() : [])
+        .then((summaries: EpicSummary[]) => {
+          for (const s of summaries) {
+            this._portfolioData.set(s.issueKey, s);
+          }
+          this._portfolioData = new Map(this._portfolioData);
+        })
+        .catch(() => {});
+    }
+  }
+
+  private _openEpic(issueKey: string) {
+    const m = issueKey.match(/^([^/]+)\/([^#]+)#(\d+)$/);
+    if (m) {
+      location.hash = `#epic/${m[1]}/${m[2]}/${m[3]}`;
     }
   }
 }

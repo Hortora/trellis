@@ -39,7 +39,8 @@ public class DependencyGraph {
         }
     }
 
-    public List<String> criticalPath() {
+
+    public List<String> criticalPathFull() {
         var sorted = topologicalSort(nodes);
         if (sorted.isEmpty()) {return List.of();}
 
@@ -73,8 +74,57 @@ public class DependencyGraph {
             fullPath.add(node);
         }
         Collections.reverse(fullPath);
+        return fullPath;
+    }
 
-        return fullPath.stream().filter(n -> !closed.contains(n)).toList();}
+    public List<String> criticalPath() {
+        return criticalPathFull().stream()
+                                 .filter(n -> !closed.contains(n))
+                                 .toList();}
+
+    public List<DagNode> dagLayout() {
+        var cycled  = cycleNodes();
+        var acyclic = new HashSet<>(nodes);
+        acyclic.removeAll(cycled);
+
+        var sorted   = topologicalSort(acyclic);
+        var critPath = new HashSet<>(criticalPathFull());
+
+        var layerMap = new HashMap<String, Integer>();
+        for (var node : sorted) {
+            int maxPred = -1;
+            for (var dep : reverse.getOrDefault(node, List.of())) {
+                if (acyclic.contains(dep) && layerMap.containsKey(dep)) {
+                    maxPred = Math.max(maxPred, layerMap.get(dep));
+                }
+            }
+            layerMap.put(node, maxPred + 1);
+        }
+
+        var layerGroups = new HashMap<Integer, List<String>>();
+        for (var entry : layerMap.entrySet()) {
+            layerGroups.computeIfAbsent(entry.getValue(), k -> new ArrayList<>()).add(entry.getKey());
+        }
+
+        var result = new ArrayList<DagNode>();
+        for (var entry : layerGroups.entrySet()) {
+            var nodesInLayer = entry.getValue();
+            for (int i = 0; i < nodesInLayer.size(); i++) {
+                var key = nodesInLayer.get(i);
+                result.add(new DagNode(key, entry.getKey(), i,
+                                       closed.contains(key), critPath.contains(key), false, false));
+            }
+        }
+
+        int cycleIndex = 0;
+        for (var key : cycled) {
+            result.add(new DagNode(key, -1, cycleIndex++,
+                                   closed.contains(key), false, true, false));
+        }
+
+        return result;
+    }
+
 
     public Set<String> cycleNodes() {
         var inDegree = new HashMap<String, Integer>();
@@ -109,24 +159,53 @@ public class DependencyGraph {
         return cyclic;
     }
 
-    public List<String> bottlenecks() {
-        var open = openNodes();
-        var impact = new HashMap<String, Integer>();
+
+    public Map<String, Integer> cascadeUnlockCounts() {
+        var open   = openNodes();
+        var result = new HashMap<String, Integer>();
 
         for (var node : open) {
+            var simClosed = new HashSet<>(closed);
+            simClosed.add(node);
             int count = 0;
-            for (var succ : forward.getOrDefault(node, List.of())) {
-                if (open.contains(succ)) count++;
-            }
-            impact.put(node, count);
-        }
+            var queue = new ArrayDeque<String>();
 
-        return impact.entrySet().stream()
-                .filter(e -> e.getValue() > 0)
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .map(Map.Entry::getKey)
-                .toList();
+            for (var succ : forward.getOrDefault(node, List.of())) {
+                if (!open.contains(succ)) {continue;}
+                if (allBlockersResolved(succ, simClosed)) {
+                    queue.add(succ);
+                }
+            }
+
+            while (!queue.isEmpty()) {
+                var unlocked = queue.poll();
+                count++;
+                simClosed.add(unlocked);
+                for (var succ : forward.getOrDefault(unlocked, List.of())) {
+                    if (simClosed.contains(succ) || !open.contains(succ)) {continue;}
+                    if (allBlockersResolved(succ, simClosed)) {
+                        queue.add(succ);
+                    }
+                }
+            }
+            result.put(node, count);
+        }
+        return result;
     }
+
+    private boolean allBlockersResolved(String node, Set<String> resolvedSet) {
+        return reverse.getOrDefault(node, List.of()).stream()
+                      .filter(nodes::contains)
+                      .allMatch(resolvedSet::contains);
+    }
+
+    public List<String> bottlenecks() {
+        var counts = cascadeUnlockCounts();
+        return counts.entrySet().stream()
+                     .filter(e -> e.getValue() > 1)
+                     .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                     .map(Map.Entry::getKey)
+                     .toList();}
 
     public Set<String> unblocked() {
         var open = openNodes();

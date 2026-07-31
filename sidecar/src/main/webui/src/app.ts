@@ -1,6 +1,7 @@
 import "./views/org-dashboard";
 import "./views/slot-detail";
 import "./views/launcher";
+import "./views/epic-dashboard";
 
 const container = document.getElementById("app");
 
@@ -23,6 +24,13 @@ function route() {
     const root = decodeURIComponent(rootMatch[1]);
     const dashboard = document.createElement('trellis-org-dashboard') as any;
     dashboard.workspaceRoot = root;
+    container.appendChild(dashboard);
+  } else if (hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)$/)) {
+    const epicMatch = hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)$/)!;
+    const dashboard = document.createElement('trellis-epic-dashboard') as any;
+    dashboard.owner = epicMatch[1];
+    dashboard.repo = epicMatch[2];
+    dashboard.epicNumber = parseInt(epicMatch[3]);
     container.appendChild(dashboard);
   } else if (hash === '' || hash === '#' || hash === '#launcher') {
     const launcher = document.createElement('trellis-launcher');

@@ -8,12 +8,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@casehubio/blocks-ui-blocks-timeline": "*",
+    "@casehubio/blocks-ui-core": "*",
+    "@casehubio/blocks-ui-kpi-metric-row": "*",
     "@casehubio/pages-runtime": "*",
     "@casehubio/pages-ui": "*",
     "@casehubio/pages-ui-components": "*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
+    "echarts": "^6.1.0",
     "lit": "^3.3.3"
   },
   "resolutions": {
@@ -25,7 +29,10 @@
     "@casehubio/pages-ui": "portal:./.casehub-packages/packages/pages-ui",
     "@casehubio/pages-ui-components": "portal:./.casehub-packages/packages/pages-ui-components",
     "@casehubio/pages-ui-tokens": "portal:./.casehub-packages/packages/pages-ui-tokens",
-    "@casehubio/pages-viz": "portal:./.casehub-packages/packages/pages-viz"
+    "@casehubio/pages-viz": "portal:./.casehub-packages/packages/pages-viz",
+    "@casehubio/blocks-ui-core": "portal:./.casehub-packages/packages/blocks-ui-core",
+    "@casehubio/blocks-ui-kpi-metric-row": "portal:./.casehub-packages/packages/kpi-metric-row",
+    "@casehubio/blocks-ui-blocks-timeline": "portal:./.casehub-packages/packages/blocks-timeline"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

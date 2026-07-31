@@ -5,6 +5,39 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@casehubio/blocks-ui-blocks-timeline@portal:./.casehub-packages/packages/blocks-timeline::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/blocks-ui-blocks-timeline@portal:./.casehub-packages/packages/blocks-timeline::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/blocks-ui-core": "npm:0.2.2"
+    "@casehubio/pages-data": "npm:*"
+    "@casehubio/pages-primitives": "npm:*"
+    lit: "npm:^3.2.0"
+  languageName: node
+  linkType: soft
+
+"@casehubio/blocks-ui-core@portal:./.casehub-packages/packages/blocks-ui-core::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/blocks-ui-core@portal:./.casehub-packages/packages/blocks-ui-core::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/pages-component": "npm:*"
+    "@casehubio/pages-data": "npm:*"
+    "@casehubio/pages-primitives": "npm:*"
+    "@casehubio/pages-ui-tokens": "npm:*"
+    lit: "npm:^3.3.3"
+  languageName: node
+  linkType: soft
+
+"@casehubio/blocks-ui-kpi-metric-row@portal:./.casehub-packages/packages/kpi-metric-row::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/blocks-ui-kpi-metric-row@portal:./.casehub-packages/packages/kpi-metric-row::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/blocks-ui-core": "npm:0.2.2"
+    "@casehubio/pages-primitives": "npm:*"
+    lit: "npm:^3.1.0"
+  languageName: node
+  linkType: soft
+
 "@casehubio/pages-component@portal:./.casehub-packages/packages/pages-component::locator=trellis-webui%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-component@portal:./.casehub-packages/packages/pages-component::locator=trellis-webui%40workspace%3A."
@@ -344,6 +377,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"echarts@npm:^6.1.0":
+  version: 6.1.0
+  resolution: "echarts@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+    zrender: "npm:6.1.0"
+  checksum: 10c0/a0911a9d75969ff946d0bce998e95e1924cdec7f5ca6be13ded376e2a47067c70b264ee8d04ba84345aa7895363e202f54c87d2bae114859bd154d565babc09c
+  languageName: node
+  linkType: hard
+
 "esbuild@npm:^0.25.0":
   version: 0.25.12
   resolution: "esbuild@npm:0.25.12"
@@ -471,7 +514,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lit@npm:^3.0.0, lit@npm:^3.3.3":
+"lit@npm:^3.0.0, lit@npm:^3.1.0, lit@npm:^3.2.0, lit@npm:^3.3.3":
   version: 3.3.3
   resolution: "lit@npm:3.3.3"
   dependencies:
@@ -495,12 +538,16 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "trellis-webui@workspace:."
   dependencies:
+    "@casehubio/blocks-ui-blocks-timeline": "npm:*"
+    "@casehubio/blocks-ui-core": "npm:*"
+    "@casehubio/blocks-ui-kpi-metric-row": "npm:*"
     "@casehubio/pages-runtime": "npm:*"
     "@casehubio/pages-ui": "npm:*"
     "@casehubio/pages-ui-components": "npm:*"
     "@xterm/addon-fit": "npm:^0.10.0"
     "@xterm/addon-webgl": "npm:^0.18.0"
     "@xterm/xterm": "npm:^5.5.0"
+    echarts: "npm:^6.1.0"
     esbuild: "npm:^0.25.0"
     lit: "npm:^3.3.3"
     typescript: "npm:^5.6.0"
@@ -547,5 +594,14 @@ __metadata:
   dependencies:
     tslib: "npm:2.3.0"
   checksum: 10c0/dc1cc570054640cbd8fbb7b92e6252f225319522bfe3e8dc8bf02cc02d414e00a4c8d0a6f89bfc9d96e5e9511fdca94dd3d06bf53690df2b2f12b0fc560ac307
+  languageName: node
+  linkType: hard
+
+"zrender@npm:6.1.0":
+  version: 6.1.0
+  resolution: "zrender@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+  checksum: 10c0/bfdb5e2ccd70893a9e2c7f33959749a6a1abc8912c2b1af301a05593d677a2f6f6087cdc4f0bf73883b99eea2f2d11d1922c71c3bf0bd4e9e5b362fd32129bce
   languageName: node
   linkType: hard
