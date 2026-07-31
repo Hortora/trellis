@@ -45,18 +45,23 @@ public class ScriptRunner {
         LOG.debugf("Running: %s %s", skillDir + "/" + scriptName, args);
         var process = pb.start();
 
+        var stdoutFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try { return new String(process.getInputStream().readAllBytes()); }
+            catch (IOException e) { return ""; }
+        });
         var stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             try { return new String(process.getErrorStream().readAllBytes()); }
             catch (IOException e) { return ""; }
         });
-        var stdout = new String(process.getInputStream().readAllBytes());
-        var stderr = stderrFuture.join();
 
         boolean completed = process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS);
         if (!completed) {
             process.destroyForcibly();
             throw new IOException("Script timed out after 120s: " + skillDir + "/" + scriptName);
         }
+
+        var stdout = stdoutFuture.join();
+        var stderr = stderrFuture.join();
         int exitCode = process.exitValue();
 
         var output = parseKeyValues(stdout);
