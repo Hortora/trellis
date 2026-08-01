@@ -1,7 +1,5 @@
 package io.hortora.trellis.issues;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -9,7 +7,8 @@ import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -25,11 +24,16 @@ public class IssueEngine {
 
     @Inject
     ObjectMapper mapper;
+    @Inject
+    @io.hortora.trellis.coordinator.IssuesCacheRefreshed
+    jakarta.enterprise.event.Event<String> issuesCacheRefreshed;
+
 
     public List<IssueInfo> fetchIssues(String owner, String repo) {
         try {
             var issues = fetchFromGitHub(owner, repo);
             cache.save(owner, repo, issues);
+            if (issuesCacheRefreshed != null) issuesCacheRefreshed.fireAsync(owner + "/" + repo);
             return issues;
         } catch (Exception e) {
             LOG.warnf(e, "Failed to fetch issues from GitHub for %s/%s — serving from cache", owner, repo);

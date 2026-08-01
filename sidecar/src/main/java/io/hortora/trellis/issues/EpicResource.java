@@ -1,13 +1,13 @@
 package io.hortora.trellis.issues;
 
 import jakarta.inject.Inject;
-import org.jboss.logging.Logger;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -25,6 +25,12 @@ public class EpicResource {
     @Inject
     EpicAnalyzer analyzer;
 
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Inject
+    io.hortora.trellis.coordinator.EnhancedRecommendationCache recommendationCache;
+
     @GET
     @Path("/epics/{number}/analysis")
     public Response analysis(@PathParam("owner") String owner,
@@ -33,7 +39,13 @@ public class EpicResource {
         var issues = engine.fetchIssues(owner, repo);
         try {
             var analysis = analyzer.analyze(owner, repo, number, issues);
-            return Response.ok(analysis).build();
+            var node     = objectMapper.valueToTree(analysis);
+            var epicRef  = owner + "/" + repo + "#" + number;
+            var enhanced = recommendationCache.get(epicRef);
+            if (enhanced != null) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) node).putPOJO("enhancedRecommendations", enhanced);
+            }
+            return Response.ok(node).build();
         } catch (NoSuchElementException e) {
             return Response.status(404).entity(Map.of("error", e.getMessage())).build();
         }

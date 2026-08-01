@@ -18,6 +18,7 @@
         <quinoa.version>2.8.3</quinoa.version>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <casehub-packages.phase>initialize</casehub-packages.phase>
+        <casehub.version>0.2-SNAPSHOT</casehub.version>
     </properties>
 
     <dependencyManagement>
@@ -31,6 +32,7 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
 
     <dependencies>
         <dependency>
@@ -49,12 +51,33 @@
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-pages-push</artifactId>
-            <version>0.2-SNAPSHOT</version>
+            <version>${casehub.version}</version>
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-pages-push-runtime</artifactId>
-            <version>0.2-SNAPSHOT</version>
+            <version>${casehub.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-blocks</artifactId>
+            <version>${casehub.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-platform-agent-api</artifactId>
+            <version>${casehub.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-platform-agent-claude</artifactId>
+            <version>${casehub.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.46.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -95,7 +118,7 @@
                                 <artifactItem>
                                     <groupId>io.casehub</groupId>
                                     <artifactId>casehub-pages-npm</artifactId>
-                                    <version>0.2-SNAPSHOT</version>
+                                    <version>${casehub.version}</version>
                                     <outputDirectory>${project.basedir}/src/main/webui/.casehub-packages</outputDirectory>
                                 </artifactItem>
                                 <artifactItem>

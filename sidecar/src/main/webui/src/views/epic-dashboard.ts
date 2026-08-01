@@ -3,6 +3,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import '@casehubio/blocks-ui-kpi-metric-row';
 import '@casehubio/blocks-ui-blocks-timeline';
 import '../components/dag';
+import '../components/coordinator-panel';
+import '../components/enhanced-recommendation-card';
 
 interface EpicAnalysis {
   issues: { key: string; title: string; state: string }[];
@@ -18,6 +20,7 @@ interface EpicAnalysis {
   recommendations: { key: string; title: string; type: string; score: number; reason: string }[];
   batches: { batch: number; label: string; status: string; issues: string[] }[];
   cycleWarning: string[];
+  enhancedRecommendations?: { base: { key: string; title: string; type: string; score: number; reason: string }; reasoning: string; contextFactors: string[]; adjustedScore: number; generatedAt: string }[] | null;
 }
 
 interface TimelineNode {
@@ -55,6 +58,7 @@ export class TrellisEpicDashboard extends LitElement {
   @state() private _loading = true;
   @state() private _startingKey: string | null = null;
   @state() private _startError: string | null = null;
+  @state() private _showCoordinator = false;
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; font-family: system-ui, sans-serif; }
@@ -109,6 +113,16 @@ export class TrellisEpicDashboard extends LitElement {
 
     .timeline-section { padding: 1rem 1.5rem; }
 
+    .coordinator-toggle {
+      padding: 0.2rem 0.6rem; border: 1px solid #555; border-radius: 4px;
+      background: transparent; color: #aaa; cursor: pointer; font-size: 0.75rem;
+      margin-left: auto;
+    }
+    .coordinator-toggle.active { background: #1e3a5f; color: #93c5fd; border-color: #1d4ed8; }
+    .coordinator-section {
+      height: 350px; margin: 0 1.5rem; border: 1px solid #333;
+      border-radius: 6px; overflow: hidden;
+    }
     .loading { padding: 2rem; text-align: center; color: #666; }
     .error { padding: 2rem; color: #f87171; }
     .back-link {
@@ -143,6 +157,14 @@ export class TrellisEpicDashboard extends LitElement {
           density="compact"
         ></blocks-kpi-metric-row>
       </div>
+      ${this._showCoordinator ? html`
+        <div class="coordinator-section">
+          <trellis-coordinator-panel
+            .workspaceRoot=${this.workspaceRoot}
+            .epicRef=${`${this.owner}/${this.repo}#${this.epicNumber}`}
+          ></trellis-coordinator-panel>
+        </div>
+      ` : nothing}
       <div class="body">
         <div class="dag-panel">
           <trellis-dag
@@ -186,6 +208,10 @@ export class TrellisEpicDashboard extends LitElement {
         <h1>${title}</h1>
         <span class="ref">${this.owner}/${this.repo}#${this.epicNumber}</span>
         <span class="progress-badge">${kpis.closed}/${kpis.total} done</span>
+        <button class="coordinator-toggle ${this._showCoordinator ? 'active' : ''}"
+          @click=${() => this._showCoordinator = !this._showCoordinator}>
+          Coordinator
+        </button>
       </div>
     `;
   }
@@ -206,6 +232,20 @@ export class TrellisEpicDashboard extends LitElement {
   private _renderRecommendations(recs: EpicAnalysis['recommendations']) {
     if (recs.length === 0) {
       return html`<div class="recs-title">No recommendations</div>`;
+    }
+    const enhanced = this._data?.enhancedRecommendations;
+    if (enhanced && enhanced.length > 0) {
+      return html`
+        <div class="recs-title">Recommendations (enhanced)</div>
+        ${this._startError ? html`<div class="start-error">${this._startError}</div>` : nothing}
+        ${enhanced.map(er => html`
+          <trellis-enhanced-recommendation-card
+            .recommendation=${er}
+            .workspaceRoot=${this.workspaceRoot}
+            @start-work=${(e: CustomEvent) => this._startWork(recs.find(r => r.key === e.detail.key) ?? recs[0])}
+          ></trellis-enhanced-recommendation-card>
+        `)}
+      `;
     }
     return html`
       <div class="recs-title">Recommendations</div>

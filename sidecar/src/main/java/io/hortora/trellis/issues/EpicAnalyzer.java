@@ -1,5 +1,6 @@
 package io.hortora.trellis.issues;
 
+import io.hortora.trellis.coordinator.AnalysisRecomputed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -13,28 +14,32 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class EpicAnalyzer {
 
-    private final DependencyParser parser;
+    private final DependencyParser     parser;
     private final RecommendationEngine recEngine;
 
     @Inject
+    @AnalysisRecomputed
+    jakarta.enterprise.event.Event<EpicAnalysis> analysisRecomputed;
+
+    @Inject
     public EpicAnalyzer(DependencyParser parser, RecommendationEngine recEngine) {
-        this.parser = parser;
+        this.parser    = parser;
         this.recEngine = recEngine;
     }
 
     public EpicAnalysis analyze(String owner, String repo, int epicNumber,
                                 List<IssueInfo> allIssues) {
         var epicIssue = allIssues.stream()
-                .filter(i -> i.owner().equals(owner) && i.repo().equals(repo)
-                        && i.number() == epicNumber)
-                .findFirst().orElseThrow(() -> new NoSuchElementException(
+                                 .filter(i -> i.owner().equals(owner) && i.repo().equals(repo)
+                                              && i.number() == epicNumber)
+                                 .findFirst().orElseThrow(() -> new NoSuchElementException(
                         "Epic #" + epicNumber + " not found"));
 
         var childKeys = new LinkedHashSet<>(
                 EpicBodyParser.parseChildren(epicIssue.body(), owner, repo));
 
         var allDeps = new ArrayList<Dependency>();
-        for (var issue : allIssues) allDeps.addAll(parser.parse(issue));
+        for (var issue : allIssues) {allDeps.addAll(parser.parse(issue));}
 
         var externalBlockers = new HashSet<String>();
         for (var dep : allDeps) {
@@ -47,58 +52,60 @@ public class EpicAnalyzer {
         graphNodes.addAll(externalBlockers);
 
         var graphEdges = allDeps.stream()
-                .filter(d -> graphNodes.contains(d.fromKey()) && graphNodes.contains(d.toKey()))
-                .toList();
+                                .filter(d -> graphNodes.contains(d.fromKey()) && graphNodes.contains(d.toKey()))
+                                .toList();
 
         var closedKeys = allIssues.stream()
-                .filter(i -> "CLOSED".equals(i.state()))
-                .map(IssueInfo::key)
-                .collect(Collectors.toSet());
+                                  .filter(i -> "CLOSED".equals(i.state()))
+                                  .map(IssueInfo::key)
+                                  .collect(Collectors.toSet());
 
         var graph = new DependencyGraph(graphNodes, graphEdges,
-                closedKeys.stream().filter(graphNodes::contains).collect(Collectors.toSet()));
+                                        closedKeys.stream().filter(graphNodes::contains).collect(Collectors.toSet()));
 
         var dagNodes = graph.dagLayout();
         var enrichedNodes = dagNodes.stream()
-                .map(n -> new DagNode(n.key(), n.layer(), n.index(), n.closed(),
-                        n.onCriticalPath(), n.inCycle(),
-                        externalBlockers.contains(n.key())))
-                .toList();
+                                    .map(n -> new DagNode(n.key(), n.layer(), n.index(), n.closed(),
+                                                          n.onCriticalPath(), n.inCycle(),
+                                                          externalBlockers.contains(n.key())))
+                                    .toList();
 
         var edges = graphEdges.stream()
-                .map(d -> new DagEdge(d.toKey(), d.fromKey()))
-                .toList();
+                              .map(d -> new DagEdge(d.toKey(), d.fromKey()))
+                              .toList();
 
         var graphData = new GraphData(enrichedNodes, edges);
 
         var critPathFull = graph.criticalPathFull().stream()
-                .filter(childKeys::contains).toList();
+                                .filter(childKeys::contains).toList();
         var critPathOpen = graph.criticalPath().stream()
-                .filter(childKeys::contains).toList();
+                                .filter(childKeys::contains).toList();
         int childTotal = (int) childKeys.stream()
-                .filter(k -> allIssues.stream().anyMatch(i -> i.key().equals(k)))
-                .count();
+                                        .filter(k -> allIssues.stream().anyMatch(i -> i.key().equals(k)))
+                                        .count();
         int childClosed = (int) childKeys.stream().filter(closedKeys::contains).count();
-        int childOpen = childTotal - childClosed;
+        int childOpen   = childTotal - childClosed;
         int bottleneckCount = (int) graph.bottlenecks().stream()
-                .filter(childKeys::contains).count();
+                                         .filter(childKeys::contains).count();
         int maxPar = (int) graph.unblocked().stream()
-                .filter(childKeys::contains).count();
+                                .filter(childKeys::contains).count();
 
         var kpis = new EpicKpis(childTotal, childOpen, childClosed,
-                critPathFull.size(), critPathOpen.size(),
-                bottleneckCount, maxPar);
+                                critPathFull.size(), critPathOpen.size(),
+                                bottleneckCount, maxPar);
 
         var graphIssues = allIssues.stream()
-                .filter(i -> graphNodes.contains(i.key()))
-                .toList();
+                                   .filter(i -> graphNodes.contains(i.key()))
+                                   .toList();
 
-        var recs = recEngine.recommend(graph, graphIssues, childKeys);
+        var recs    = recEngine.recommend(graph, graphIssues, childKeys);
         var batches = EpicBodyParser.parseBatches(epicIssue.body(), owner, repo, allIssues);
         var cycles = new ArrayList<>(graph.cycleNodes().stream()
-                .filter(childKeys::contains).toList());
+                                          .filter(childKeys::contains).toList());
 
-        return new EpicAnalysis(graphIssues, graphData, kpis, recs, batches, cycles);
+        var result = new EpicAnalysis(graphIssues, graphData, kpis, recs, batches, cycles);
+        if (analysisRecomputed != null) analysisRecomputed.fireAsync(result);
+        return result;
     }
 
     public EpicSummary summarize(EpicAnalysis analysis, String issueKey, String title) {

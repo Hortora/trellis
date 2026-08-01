@@ -2,6 +2,7 @@ import "./views/org-dashboard";
 import "./views/slot-detail";
 import "./views/launcher";
 import "./views/epic-dashboard";
+import "./components/coordinator-panel";
 
 const container = document.getElementById("app");
 
@@ -34,6 +35,13 @@ function route() {
     dashboard.epicNumber = parseInt(epicMatch[3]);
     if (rootParam) dashboard.workspaceRoot = decodeURIComponent(rootParam[1]);
     container.appendChild(dashboard);
+  } else if (hash.match(/^#coordinator/)) {
+    const rootParam = hash.match(/[?&]root=([^&]+)/);
+    const epicParam = hash.match(/[?&]epic=([^&]+)/);
+    const panel = document.createElement('trellis-coordinator-panel') as any;
+    if (rootParam) panel.workspaceRoot = decodeURIComponent(rootParam[1]);
+    if (epicParam) panel.epicRef = decodeURIComponent(epicParam[1]);
+    container.appendChild(panel);
   } else if (hash === '' || hash === '#' || hash === '#launcher') {
     const launcher = document.createElement('trellis-launcher');
     container.appendChild(launcher);
