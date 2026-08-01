@@ -16,3 +16,6 @@ sidecar/src/main/webui/.yarn/
 
 # OS
 .DS_Store
+
+# Workspace
+wksp

@@ -1,0 +1,13 @@
+extends: ~/.claude/blog-routing.yaml
+
+# trellis workspace — blog entries live in blog/
+# Hortora project → personal-notes only (not casehub)
+
+rules:
+  - match:
+      project: trellis
+    destinations: [personal-notes]
+  - match:
+      project: trellis
+      entry_type: article
+    destinations: [personal-articles]
