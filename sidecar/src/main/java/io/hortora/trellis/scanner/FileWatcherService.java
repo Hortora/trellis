@@ -63,6 +63,14 @@ public class FileWatcherService {
         return state != null ? state.model : null;
     }
 
+    public java.util.List<WorkspaceModel> allModels() {
+        return watches.values().stream()
+                      .map(ws -> ws.model)
+                      .filter(java.util.Objects::nonNull)
+                      .toList();
+    }
+
+
     public void onWorkspaceChanged(@Observes @WorkspaceChanged Path root) {
         rescan(root);
     }

@@ -2,6 +2,7 @@ import "./views/org-dashboard";
 import "./views/slot-detail";
 import "./views/launcher";
 import "./views/epic-dashboard";
+import "./views/garden-view";
 import "./components/coordinator-panel";
 
 const container = document.getElementById("app");
@@ -42,6 +43,9 @@ function route() {
     if (rootParam) panel.workspaceRoot = decodeURIComponent(rootParam[1]);
     if (epicParam) panel.epicRef = decodeURIComponent(epicParam[1]);
     container.appendChild(panel);
+  } else if (hash.match(/^#garden/)) {
+    const view = document.createElement('trellis-garden-view');
+    container.appendChild(view);
   } else if (hash === '' || hash === '#' || hash === '#launcher') {
     const launcher = document.createElement('trellis-launcher');
     container.appendChild(launcher);
