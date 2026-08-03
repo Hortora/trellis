@@ -24,6 +24,8 @@ public class CoordinatorResource {
     @Inject CoordinatorConfig config;
     @Inject
             ActionService     actionService;
+    @Inject
+    AutonomyResolver autonomyResolver;
 
 
     @POST
@@ -109,6 +111,37 @@ public class CoordinatorResource {
     public Response cancelAction(@PathParam("id") String id) {
         return actionOp(id, actionService::cancel);
     }
+
+    @GET
+    @Path("/autonomy")
+    public Response autonomy(@QueryParam("workspace") String workspace) {
+        var level  = autonomyResolver.resolveLevel(workspace != null ? workspace : "default");
+        var source = autonomyResolver.sessionOverride() != null ? "session" : "preference";
+        return Response.ok(Map.of("level", level, "source", source)).build();
+    }
+
+    @POST
+    @Path("/autonomy")
+    public Response setAutonomy(@QueryParam("level") AutonomyLevel level) {
+        var previous = autonomyResolver.sessionOverride();
+        autonomyResolver.setSessionOverride(level);
+        if (level == AutonomyLevel.MANUAL && (previous == null || previous != AutonomyLevel.MANUAL)) {
+            actionService.cancelAllCountdowns();
+        }
+        return autonomy(null);
+    }
+
+    @POST
+    @Path("/autonomy/reset")
+    public Response resetAutonomy() {
+        var previous = autonomyResolver.sessionOverride();
+        autonomyResolver.clearSessionOverride();
+        if (previous != null && previous != AutonomyLevel.MANUAL) {
+            actionService.cancelAllCountdowns();
+        }
+        return autonomy(null);
+    }
+
 
     private Response actionOp(String id, java.util.function.Function<String, ProposedAction> op) {
         try {

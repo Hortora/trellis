@@ -32,6 +32,14 @@ interface ProposedAction {
     proposedAt: string;
     resolvedAt: string | null;
     executionResult: string | null;
+    countdownEndsAt: string | null;
+}
+
+type AutonomyLevel = 'MANUAL' | 'OBSERVATION' | 'AUTONOMOUS';
+
+interface AutonomyState {
+    level: AutonomyLevel;
+    source: 'session' | 'preference';
 }
 
 @customElement('trellis-coordinator-panel')
@@ -43,7 +51,10 @@ export class CoordinatorPanel extends LitElement {
     @state() private actions: Map<string, ProposedAction> = new Map();
     @state() private inputValue = '';
     @state() private loading = false;
+    @state() private autonomy: AutonomyState = { level: 'MANUAL', source: 'preference' };
     private eventSource: EventSource | null = null;
+    private autoExecuted: Set<string> = new Set();
+    private countdownTimers: Map<string, number> = new Map();
 
     static override styles = css`
         :host {
@@ -112,6 +123,40 @@ export class CoordinatorPanel extends LitElement {
         .action-status.executing { color: #60a5fa; }
         .action-status.completed { color: #86efac; }
         .action-status.failed { color: #fca5a5; }
+        .mode-toggle { display: flex; gap: 2px; margin-left: auto; }
+        .mode-btn {
+            padding: 0.2rem 0.5rem; border: 1px solid #444; border-radius: 3px;
+            background: transparent; color: #888; cursor: pointer; font-size: 0.65rem;
+            font-weight: 500; transition: all 0.15s;
+        }
+        .mode-btn.active { background: #1d4ed8; color: white; border-color: #1d4ed8; }
+        .mode-btn:hover:not(.active) { background: #333; color: #ccc; }
+        .mode-reset { font-size: 0.6rem; color: #4a9eff; cursor: pointer; margin-left: 0.5rem; }
+        .mode-reset:hover { text-decoration: underline; }
+        .header-row { display: flex; align-items: center; padding: 0.5rem; gap: 0.5rem; }
+        .countdown-bar {
+            display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
+            font-size: 0.75rem; color: #fde68a;
+        }
+        .countdown-ring {
+            width: 20px; height: 20px; border-radius: 50%;
+            border: 2px solid #fde68a; border-top-color: transparent;
+            animation: spin 1s linear infinite; display: inline-block;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .auto-badge {
+            display: inline-block; padding: 0.1rem 0.4rem; border-radius: 8px;
+            font-size: 0.6rem; font-weight: 600; background: #1e3a5f; color: #93c5fd;
+            margin-left: 0.5rem;
+        }
+        .toast {
+            position: fixed; bottom: 1rem; right: 1rem; padding: 0.75rem 1rem;
+            border-radius: 6px; font-size: 0.8rem; z-index: 1000;
+            animation: fadeIn 0.3s ease-in;
+        }
+        .toast-info { background: #14532d; color: #86efac; border: 1px solid #166534; }
+        .toast-warning { background: #713f12; color: #fde68a; border: 1px solid #854d0e; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     `;
 
     override connectedCallback() {
@@ -123,28 +168,35 @@ export class CoordinatorPanel extends LitElement {
     override disconnectedCallback() {
         super.disconnectedCallback();
         this.eventSource?.close();
+        this.countdownTimers.forEach(timer => clearInterval(timer));
+        this.countdownTimers.clear();
     }
 
     private async _loadHistory() {
         const ws = encodeURIComponent(this.workspaceRoot);
-        const [adviceRes, convRes] = await Promise.all([
+        const [adviceRes, convRes, autonomyRes] = await Promise.all([
             fetch(`/api/coordinator/advice?workspace=${ws}`),
-            fetch(`/api/coordinator/conversation?workspace=${ws}`)
+            fetch(`/api/coordinator/conversation?workspace=${ws}`),
+            fetch(`/api/coordinator/autonomy?workspace=${ws}`)
         ]);
         if (adviceRes.ok) this.advice = await adviceRes.json();
         if (convRes.ok) this.conversation = await convRes.json();
+        if (autonomyRes.ok) this.autonomy = await autonomyRes.json();
 
         for (const a of this.advice.filter(a => a.actionKey)) {
             const res = await fetch(`/api/coordinator/actions/${a.actionKey}`);
             if (res.ok) {
                 const action: ProposedAction = await res.json();
                 this.actions = new Map(this.actions).set(a.id, action);
+                if (action.countdownEndsAt && action.status === 'PROPOSED') {
+                    this._startCountdownTimer(action);
+                }
             }
         }
     }
 
     private _connectSSE() {
-        this.eventSource = new EventSource('/api/push?topics=coordinator:advice,coordinator:message,coordinator:action');
+        this.eventSource = new EventSource('/api/push?topics=coordinator:advice,coordinator:message,coordinator:action,coordinator:notification');
         this.eventSource.addEventListener('coordinator:advice', (e: MessageEvent) => {
             this.advice = [JSON.parse(e.data), ...this.advice];
         });
@@ -153,7 +205,20 @@ export class CoordinatorPanel extends LitElement {
         });
         this.eventSource.addEventListener('coordinator:action', (e: MessageEvent) => {
             const action: ProposedAction = JSON.parse(e.data);
+            if (action.status === 'APPROVED' && !this.countdownTimers.has(action.id)) {
+                this.autoExecuted.add(action.adviceId);
+            }
+            if (action.countdownEndsAt && action.status === 'PROPOSED') {
+                this._startCountdownTimer(action);
+            }
+            if (action.status !== 'PROPOSED') {
+                this._clearCountdownTimer(action.id);
+            }
             this.actions = new Map(this.actions).set(action.adviceId, action);
+        });
+        this.eventSource.addEventListener('coordinator:notification', (e: MessageEvent) => {
+            const n = JSON.parse(e.data);
+            this._showToast(n.title, n.severity, n.detail);
         });
     }
 
@@ -207,14 +272,68 @@ export class CoordinatorPanel extends LitElement {
         if (res.ok) { const action = await res.json(); this.actions = new Map(this.actions).set(action.adviceId, action); }
     }
 
+    private async _setAutonomy(level: AutonomyLevel) {
+        const res = await fetch(`/api/coordinator/autonomy?level=${level}`, { method: 'POST' });
+        if (res.ok) this.autonomy = await res.json();
+    }
+
+    private async _resetAutonomy() {
+        const res = await fetch('/api/coordinator/autonomy/reset', { method: 'POST' });
+        if (res.ok) this.autonomy = await res.json();
+    }
+
+    private _startCountdownTimer(action: ProposedAction) {
+        this._clearCountdownTimer(action.id);
+        const timer = window.setInterval(() => {
+            const deadline = new Date(action.countdownEndsAt!).getTime();
+            if (Date.now() >= deadline) {
+                this._clearCountdownTimer(action.id);
+            }
+            this.requestUpdate();
+        }, 1000);
+        this.countdownTimers.set(action.id, timer);
+    }
+
+    private _clearCountdownTimer(actionId: string) {
+        const timer = this.countdownTimers.get(actionId);
+        if (timer) {
+            clearInterval(timer);
+            this.countdownTimers.delete(actionId);
+        }
+    }
+
+    private _remainingSeconds(action: ProposedAction): number {
+        if (!action.countdownEndsAt) return 0;
+        return Math.max(0, Math.ceil((new Date(action.countdownEndsAt).getTime() - Date.now()) / 1000));
+    }
+
+    private _showToast(title: string, severity: string, detail: string) {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${severity}`;
+        toast.textContent = detail ? `${title} — ${detail}` : title;
+        this.shadowRoot?.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    }
+
     private _renderActionControls(action: ProposedAction) {
         switch (action.status) {
-            case 'PROPOSED':
+            case 'PROPOSED': {
+                const remaining = this._remainingSeconds(action);
+                if (action.countdownEndsAt && remaining > 0) {
+                    return html`
+                        <div class="countdown-bar">
+                            <span class="countdown-ring"></span>
+                            <span>Auto-executing in ${remaining}s</span>
+                            <button class="btn-approve" @click=${() => this._approveAction(action.id)}>Approve Now</button>
+                            <button class="btn-reject" @click=${() => this._rejectAction(action.id)}>Veto</button>
+                        </div>`;
+                }
                 return html`
                     <div class="action-buttons">
                         <button class="btn-approve" @click=${() => this._approveAction(action.id)}>Approve</button>
                         <button class="btn-reject" @click=${() => this._rejectAction(action.id)}>Reject</button>
                     </div>`;
+            }
             case 'CONFIRMING':
                 return html`
                     <div class="action-confirm">
@@ -224,8 +343,10 @@ export class CoordinatorPanel extends LitElement {
                     </div>`;
             case 'EXECUTING':
                 return html`<div class="action-status executing">Executing...</div>`;
-            case 'COMPLETED':
-                return html`<div class="action-status completed">✓ ${action.executionResult ?? 'Done'}</div>`;
+            case 'COMPLETED': {
+                const isAuto = this.autoExecuted.has(action.adviceId);
+                return html`<div class="action-status completed">✓ ${action.executionResult ?? 'Done'}${isAuto ? html`<span class="auto-badge">auto</span>` : nothing}</div>`;
+            }
             case 'FAILED':
                 return html`<div class="action-status failed">✗ ${action.executionResult ?? 'Failed'}</div>`;
             default:
@@ -235,8 +356,16 @@ export class CoordinatorPanel extends LitElement {
 
     override render() {
         return html`
+            <div class="header-row">
+                <div class="section-label" style="padding:0">Advisor</div>
+                <div class="mode-toggle">
+                    <button class="mode-btn ${this.autonomy.level === 'MANUAL' ? 'active' : ''}" @click=${() => this._setAutonomy('MANUAL')}>MANUAL</button>
+                    <button class="mode-btn ${this.autonomy.level === 'OBSERVATION' ? 'active' : ''}" @click=${() => this._setAutonomy('OBSERVATION')}>OBS</button>
+                    <button class="mode-btn ${this.autonomy.level === 'AUTONOMOUS' ? 'active' : ''}" @click=${() => this._setAutonomy('AUTONOMOUS')}>AUTO</button>
+                    ${this.autonomy.source === 'session' ? html`<span class="mode-reset" @click=${this._resetAutonomy}>reset</span>` : nothing}
+                </div>
+            </div>
             <div class="advice-feed">
-                <div class="section-label">Advisor</div>
                 ${this.advice.length === 0
                     ? html`<div class="advice-empty">No active advice</div>`
                     : this.advice.map(a => {

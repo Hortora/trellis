@@ -57,7 +57,7 @@ class CoordinatorSchemaManagerTest {
             try (var conn = ds.getConnection();
                  var rs = conn.createStatement().executeQuery("PRAGMA user_version")) {
                 assertTrue(rs.next());
-                assertEquals(2, rs.getInt(1));
+                assertEquals(3, rs.getInt(1));
             }
         } finally {
             java.nio.file.Files.deleteIfExists(dbFile);
@@ -74,6 +74,24 @@ class CoordinatorSchemaManagerTest {
                  var rs = conn.createStatement().executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='coordinator_actions'")) {
                 assertTrue(rs.next(), "coordinator_actions table should exist");
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(dbFile);
+        }
+    }
+
+    @Test
+    void schemaV3AddsCountdownEndsAtColumn() throws Exception {
+        var dbFile = java.nio.file.Files.createTempFile("coord-test-", ".db");
+        try {
+            var ds = createDataSource(dbFile);
+            new CoordinatorSchemaManager().initialize(ds);
+            try (var conn = ds.getConnection();
+                 var rs = conn.createStatement().executeQuery(
+                         "PRAGMA table_info(coordinator_actions)")) {
+                var columns = new java.util.ArrayList<String>();
+                while (rs.next()) {columns.add(rs.getString("name"));}
+                assertTrue(columns.contains("countdown_ends_at"), "countdown_ends_at column should exist, got: " + columns);
             }
         } finally {
             java.nio.file.Files.deleteIfExists(dbFile);

@@ -83,7 +83,7 @@ class LifecycleActionExecutorTest {
     private ProposedAction action(String actionType, Map<String, String> params) {
         return new ProposedAction("a1", ActionCategory.LIFECYCLE, actionType, params,
                 RiskClassification.riskFor(actionType), "test", ActionStatus.APPROVED,
-                "adv1", "/ws", Instant.now(), null, null);
+                "adv1", "/ws", Instant.now(), null, null, null);
     }
 
     static class StubLifecycleManager extends LifecycleManager {

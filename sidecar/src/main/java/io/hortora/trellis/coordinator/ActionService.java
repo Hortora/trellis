@@ -25,15 +25,40 @@ public class ActionService {
     @Inject @CoordinatorDataSourceProducer.CoordinatorDS DataSource dataSource;
     @Inject EventBroadcaster broadcaster;
     @Inject Instance<ActionExecutor> executorInstances;
+    @Inject
+            AutonomyResolver         autonomyResolver;
+    @Inject
+            CountdownScheduler       countdownScheduler;
+    @Inject
+            io.hortora.trellis.config.PreferencesService preferences;
+
 
     private List<ActionExecutor> executors;
+    private java.util.concurrent.Executor actionExecutorThread =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                var t = new Thread(r, "action-executor");
+                t.setDaemon(true);
+                return t;
+            });
+
 
     ActionService() {}
 
     static ActionService forTest(DataSource ds, List<ActionExecutor> executors) {
+        return forTest(ds, executors, null, null, null);
+    }
+
+    static ActionService forTest(DataSource ds, List<ActionExecutor> executors,
+                                 AutonomyResolver autonomyResolver,
+                                 CountdownScheduler countdownScheduler,
+                                 io.hortora.trellis.config.PreferencesService preferences) {
         var s = new ActionService();
-        s.dataSource = ds;
-        s.executors = executors;
+        s.dataSource           = ds;
+        s.executors            = executors;
+        s.autonomyResolver     = autonomyResolver;
+        s.countdownScheduler   = countdownScheduler;
+        s.preferences          = preferences;
+        s.actionExecutorThread = Runnable::run;
         return s;
     }
 
@@ -46,68 +71,85 @@ public class ActionService {
 
     public ProposedAction propose(String adviceId, ActionCategory category, String actionType,
                                    Map<String, String> params, String rationale, String workspace) {
-        var id = UUID.randomUUID().toString();
+        var id   = UUID.randomUUID().toString();
         var risk = RiskClassification.riskFor(actionType);
-        var now = Instant.now();
+        var now  = Instant.now();
         var action = new ProposedAction(id, category, actionType, params, risk, rationale,
-                ActionStatus.PROPOSED, adviceId, workspace, now, null, null);
+                                        ActionStatus.PROPOSED, adviceId, workspace, now, null, null, null);
         persist(action);
         broadcast(action);
-        return action;
-    }
+        applyAutonomy(action);
+        return action;}
 
     public ProposedAction propose(Connection conn, String adviceId, ActionCategory category,
                                    String actionType, Map<String, String> params,
                                    String rationale, String workspace) {
-        var id = UUID.randomUUID().toString();
+        var id   = UUID.randomUUID().toString();
         var risk = RiskClassification.riskFor(actionType);
-        var now = Instant.now();
+        var now  = Instant.now();
         var action = new ProposedAction(id, category, actionType, params, risk, rationale,
-                ActionStatus.PROPOSED, adviceId, workspace, now, null, null);
+                                        ActionStatus.PROPOSED, adviceId, workspace, now, null, null, null);
         persistWithConnection(conn, action);
         broadcast(action);
-        return action;
-    }
+        applyAutonomy(action);
+        return action;}
 
     public ProposedAction approve(String actionId) {
         var action = getAction(actionId);
-        if (action == null) return null;
-        validateTransition(action.status(), ActionStatus.APPROVED);
+        if (action == null) {return null;}
+        resetRateLimit();
 
         if (action.risk() == RiskLevel.HIGH) {
-            return transition(action, ActionStatus.CONFIRMING, null);
+            int updated = updateStatusCas(actionId, ActionStatus.PROPOSED, ActionStatus.CONFIRMING);
+            if (updated == 0) {return getAction(actionId);}
+            var confirming = getAction(actionId);
+            broadcast(confirming);
+            return confirming;
         }
-        return executeAction(transition(action, ActionStatus.APPROVED, null));
+        int updated = updateStatusCas(actionId, ActionStatus.PROPOSED, ActionStatus.APPROVED);
+        if (updated == 0) {return getAction(actionId);}
+        var approved = getAction(actionId);
+        broadcast(approved);
+        return executeAction(approved);
     }
 
     public ProposedAction confirm(String actionId) {
         var action = getAction(actionId);
-        if (action == null) return null;
-        validateTransition(action.status(), ActionStatus.EXECUTING);
-        return executeAction(transition(action, ActionStatus.APPROVED, null));
+        if (action == null) {return null;}
+        int updated = updateStatusCas(actionId, ActionStatus.CONFIRMING, ActionStatus.APPROVED);
+        if (updated == 0) {return getAction(actionId);}
+        var approved = getAction(actionId);
+        broadcast(approved);
+        return executeAction(approved);
     }
 
     public ProposedAction cancel(String actionId) {
-        var action = getAction(actionId);
-        if (action == null) return null;
-        if (action.status() != ActionStatus.CONFIRMING) {
-            throw new IllegalStateException("Cannot cancel from " + action.status());
+        int updated = updateStatusCas(actionId, ActionStatus.CONFIRMING, ActionStatus.PROPOSED);
+        if (updated == 0) {
+            var current = getAction(actionId);
+            if (current != null && current.status() != ActionStatus.CONFIRMING) {
+                throw new IllegalStateException("Cannot cancel from " + current.status());
+            }
+            return current;
         }
-        return transition(action, ActionStatus.PROPOSED, null);
+        var proposed = getAction(actionId);
+        broadcast(proposed);
+        return proposed;
     }
 
     public ProposedAction reject(String actionId) {
-        var action = getAction(actionId);
-        if (action == null) return null;
-        validateTransition(action.status(), ActionStatus.REJECTED);
-        return transition(action, ActionStatus.REJECTED, null);
+        int updated = updateStatusCas(actionId, ActionStatus.PROPOSED, ActionStatus.REJECTED);
+        if (updated == 0) {return getAction(actionId);}
+        var rejected = getAction(actionId);
+        broadcast(rejected);
+        return rejected;
     }
 
     public void expireStale(String actionType, Map<String, String> params) {
         try (var conn = dataSource.getConnection();
              var ps = conn.prepareStatement(
                      "SELECT id, category, action_type, params, risk, rationale, status, " +
-                     "advice_id, workspace, proposed_at, resolved_at, execution_result " +
+                     "advice_id, workspace, proposed_at, resolved_at, execution_result, countdown_ends_at " +
                      "FROM coordinator_actions WHERE action_type = ? AND status IN ('PROPOSED', 'APPROVED', 'CONFIRMING')")) {
             ps.setString(1, actionType);
             var rs = ps.executeQuery();
@@ -134,7 +176,7 @@ public class ActionService {
         try (var conn = dataSource.getConnection();
              var ps = conn.prepareStatement(
                      "SELECT id, category, action_type, params, risk, rationale, status, " +
-                     "advice_id, workspace, proposed_at, resolved_at, execution_result " +
+                     "advice_id, workspace, proposed_at, resolved_at, execution_result, countdown_ends_at " +
                      "FROM coordinator_actions WHERE id = ?")) {
             ps.setString(1, actionId);
             var rs = ps.executeQuery();
@@ -154,6 +196,139 @@ public class ActionService {
         var status = result.success() ? ActionStatus.COMPLETED : ActionStatus.FAILED;
         return transition(action, status, result.detail());
     }
+
+    private final java.util.Deque<Instant> autonomousTimestamps = new java.util.concurrent.ConcurrentLinkedDeque<>();
+
+    void autoExecute(String actionId) {
+        int updated = updateStatusCas(actionId, ActionStatus.PROPOSED, ActionStatus.APPROVED);
+        if (updated == 0) {return;}
+        var action = getAction(actionId);
+        if (action == null) {return;}
+        var approved = new ProposedAction(action.id(), action.category(),
+                                          action.actionType(), action.params(), action.risk(), action.rationale(),
+                                          ActionStatus.APPROVED, action.adviceId(), action.workspace(),
+                                          action.proposedAt(), null, null, action.countdownEndsAt());
+        broadcast(approved);
+        actionExecutorThread.execute(() -> {
+            try {
+                var result = executeAction(approved);
+                if (result != null) {notifyAutoCompletion(result);}
+            } catch (Exception e) {
+                LOG.warnf(e, "Auto-execution failed for %s", actionId);
+            }
+        });
+    }
+
+    private void notifyAutoCompletion(ProposedAction action) {
+        if (broadcaster == null) {return;}
+        var severity = action.status() == ActionStatus.COMPLETED ? "info" : "warning";
+        var title = action.status() == ActionStatus.COMPLETED
+                    ? action.actionType() + " completed"
+                    : action.actionType() + " failed";
+        try {
+            broadcaster.broadcast("coordinator:notification", Map.of(
+                    "actionId", action.id(),
+                    "actionType", action.actionType(),
+                    "title", title,
+                    "severity", severity,
+                    "detail", action.executionResult() != null ? action.executionResult() : ""
+                                                                    ));
+        } catch (Exception e) {
+            LOG.debugf(e, "Failed to broadcast notification for %s", action.id());
+        }
+    }
+
+
+    private void applyAutonomy(ProposedAction action) {
+        if (autonomyResolver == null) {return;}
+        var level = autonomyResolver.resolveLevel(action.workspace());
+        if (level == AutonomyLevel.MANUAL) {return;}
+
+        var policy = autonomyResolver.resolvePolicy(action.actionType());
+        if (level == AutonomyLevel.AUTONOMOUS && policy == AutonomyOverride.AUTONOMOUS) {
+            if (isWithinRateLimit()) {
+                recordAutonomousExecution();
+                autoExecute(action.id());
+            } else {
+                scheduleCountdown(action);
+            }
+        } else {
+            scheduleCountdown(action);
+        }
+    }
+
+    private void scheduleCountdown(ProposedAction action) {
+        int seconds  = preferences != null ? preferences.observationCountdownSeconds() : 30;
+        var deadline = Instant.now().plusSeconds(seconds);
+        persistCountdownDeadline(action.id(), deadline);
+        countdownScheduler.schedule(action.id(), seconds, this::autoExecute);
+        var withDeadline = new ProposedAction(action.id(), action.category(),
+                                              action.actionType(), action.params(), action.risk(), action.rationale(),
+                                              action.status(), action.adviceId(), action.workspace(),
+                                              action.proposedAt(), action.resolvedAt(), action.executionResult(), deadline);
+        broadcast(withDeadline);
+    }
+
+    private boolean isWithinRateLimit() {
+        pruneOldTimestamps();
+        int limit = preferences != null ? preferences.rateLimitMaxActions() : 5;
+        return autonomousTimestamps.size() < limit;
+    }
+
+    private void recordAutonomousExecution() {
+        autonomousTimestamps.addLast(Instant.now());
+    }
+
+    private void pruneOldTimestamps() {
+        int windowSeconds = preferences != null ? preferences.rateLimitWindowSeconds() : 60;
+        var cutoff        = Instant.now().minusSeconds(windowSeconds);
+        while (!autonomousTimestamps.isEmpty() && autonomousTimestamps.peekFirst().isBefore(cutoff)) {
+            autonomousTimestamps.pollFirst();
+        }
+    }
+
+    public void resetRateLimit() {
+        autonomousTimestamps.clear();
+    }
+
+    private void persistCountdownDeadline(String actionId, Instant deadline) {
+        try (var conn = dataSource.getConnection();
+             var ps = conn.prepareStatement(
+                     "UPDATE coordinator_actions SET countdown_ends_at = ? WHERE id = ?")) {
+            ps.setString(1, deadline.toString());
+            ps.setString(2, actionId);
+            ps.executeUpdate();
+        } catch (java.sql.SQLException e) {
+            LOG.warnf(e, "Failed to persist countdown deadline for %s", actionId);
+        }
+    }
+
+    public void cancelAllCountdowns() {
+        if (countdownScheduler != null) {countdownScheduler.cancelAll();}
+        try (var conn = dataSource.getConnection();
+             var ps = conn.prepareStatement(
+                     "UPDATE coordinator_actions SET countdown_ends_at = NULL " +
+                     "WHERE status = 'PROPOSED' AND countdown_ends_at IS NOT NULL")) {
+            ps.executeUpdate();
+        } catch (java.sql.SQLException e) {
+            LOG.warnf(e, "Failed to clear countdown deadlines");
+        }
+    }
+
+    public void recoverCountdowns(String workspace) {
+        var actions = queryActions(workspace, "status = 'PROPOSED' AND countdown_ends_at IS NOT NULL", 100);
+        var now     = Instant.now();
+        for (var action : actions) {
+            if (action.countdownEndsAt() == null) {continue;}
+            if (action.countdownEndsAt().isBefore(now)) {
+                autoExecute(action.id());
+            } else {
+                int remaining = (int) java.time.Duration.between(now, action.countdownEndsAt()).getSeconds();
+                countdownScheduler.schedule(action.id(), Math.max(1, remaining), this::autoExecute);
+            }
+        }
+    }
+
 
     private ActionExecutor findExecutor(ActionCategory category) {
         return executors().stream()
@@ -189,7 +364,8 @@ public class ActionService {
         var updated = new ProposedAction(action.id(), action.category(), action.actionType(),
                 action.params(), action.risk(), action.rationale(), newStatus, action.adviceId(),
                 action.workspace(), action.proposedAt(), resolvedAt,
-                executionResult != null ? executionResult : action.executionResult());
+                executionResult != null ? executionResult : action.executionResult(),
+                action.countdownEndsAt());
         updateStatus(updated);
         broadcast(updated);
         return updated;
@@ -206,8 +382,8 @@ public class ActionService {
     private void persistWithConnection(Connection conn, ProposedAction action) {
         try (var ps = conn.prepareStatement(
                 "INSERT INTO coordinator_actions (id, advice_id, category, action_type, params, risk, " +
-                "rationale, status, workspace, proposed_at, resolved_at, execution_result) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                "rationale, status, workspace, proposed_at, resolved_at, execution_result, countdown_ends_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, action.id());
             ps.setString(2, action.adviceId());
             ps.setString(3, action.category().name());
@@ -220,11 +396,11 @@ public class ActionService {
             ps.setString(10, action.proposedAt().toString());
             ps.setString(11, action.resolvedAt() != null ? action.resolvedAt().toString() : null);
             ps.setString(12, action.executionResult());
+            ps.setString(13, action.countdownEndsAt() != null ? action.countdownEndsAt().toString() : null);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to persist action " + action.id(), e);
-        }
-    }
+        }}
 
     private void updateStatus(ProposedAction action) {
         try (var conn = dataSource.getConnection();
@@ -240,6 +416,23 @@ public class ActionService {
         }
     }
 
+    int updateStatusCas(String actionId, ActionStatus expected, ActionStatus target) {
+        try (var conn = dataSource.getConnection();
+             var ps = conn.prepareStatement(
+                     "UPDATE coordinator_actions SET status = ?, resolved_at = ? " +
+                     "WHERE id = ? AND status = ?")) {
+            ps.setString(1, target.name());
+            ps.setString(2, target.isTerminal() ? Instant.now().toString() : null);
+            ps.setString(3, actionId);
+            ps.setString(4, expected.name());
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warnf(e, "CAS update failed for %s", actionId);
+            return 0;
+        }
+    }
+
+
     private void broadcast(ProposedAction action) {
         if (broadcaster != null) {
             try {
@@ -254,7 +447,7 @@ public class ActionService {
         try (var conn = dataSource.getConnection();
              var ps = conn.prepareStatement(
                      "SELECT id, category, action_type, params, risk, rationale, status, " +
-                     "advice_id, workspace, proposed_at, resolved_at, execution_result " +
+                     "advice_id, workspace, proposed_at, resolved_at, execution_result, countdown_ends_at " +
                      "FROM coordinator_actions WHERE workspace = ? AND " + statusFilter +
                      " ORDER BY proposed_at DESC LIMIT ?")) {
             ps.setString(1, workspace);
@@ -284,7 +477,8 @@ public class ActionService {
                 rs.getString("workspace"),
                 Instant.parse(rs.getString("proposed_at")),
                 rs.getString("resolved_at") != null ? Instant.parse(rs.getString("resolved_at")) : null,
-                rs.getString("execution_result"));
+                rs.getString("execution_result"),
+                rs.getString("countdown_ends_at") != null ? Instant.parse(rs.getString("countdown_ends_at")) : null);
     }
 
     private boolean paramsOverlap(Map<String, String> actionParams, Map<String, String> targetParams) {

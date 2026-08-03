@@ -15,5 +15,6 @@ public record ProposedAction(
         String workspace,
         Instant proposedAt,
         Instant resolvedAt,
-        String executionResult
+        String executionResult,
+        Instant countdownEndsAt
 ) {}

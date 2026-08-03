@@ -92,18 +92,22 @@ class ActionServiceTest {
     }
 
     @Test
-    void invalidTransitionFromTerminalThrows() {
+    void invalidTransitionFromTerminalReturnsCurrent() {
         var action = service.propose("adv6", ActionCategory.ADVISORY, "advisory.prioritise",
                 Map.of("issueKey", "#5"), "x", "/ws");
         service.reject(action.id());
-        assertThrows(IllegalStateException.class, () -> service.approve(action.id()));
+        var result = service.approve(action.id());
+        assertNotNull(result);
+        assertEquals(ActionStatus.REJECTED, result.status());
     }
 
     @Test
-    void invalidTransitionFromProposedToConfirmThrows() {
+    void invalidTransitionFromProposedToConfirmReturnsCurrent() {
         var action = service.propose("adv7", ActionCategory.ADVISORY, "advisory.prioritise",
                 Map.of("issueKey", "#5"), "x", "/ws");
-        assertThrows(IllegalStateException.class, () -> service.confirm(action.id()));
+        var result = service.confirm(action.id());
+        assertNotNull(result);
+        assertEquals(ActionStatus.PROPOSED, result.status());
     }
 
     @Test

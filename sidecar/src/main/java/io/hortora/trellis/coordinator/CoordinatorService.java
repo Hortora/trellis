@@ -44,6 +44,8 @@ public class CoordinatorService {
     @Inject EventBroadcaster broadcaster;
     @Inject
             ActionService    actionService;
+    @Inject
+    AutonomyResolver autonomyResolver;
 
 
     private final Semaphore llmSemaphore = new Semaphore(1);
@@ -375,7 +377,8 @@ public class CoordinatorService {
 
 
     private String invokeLlm(String userPrompt, CoordinatorTask task) {
-        var sessionConfig = AgentSessionConfig.of(CoordinatorPrompts.systemPrompt(), userPrompt);
+        var level = autonomyResolver != null ? autonomyResolver.resolveLevel("default") : AutonomyLevel.MANUAL;
+        var sessionConfig = AgentSessionConfig.of(CoordinatorPrompts.systemPrompt(level), userPrompt);
         var events = agentProvider.invoke(sessionConfig)
                 .collect().asList()
                 .await().atMost(Duration.ofMinutes(2));
