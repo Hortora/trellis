@@ -48,6 +48,12 @@ public class CoordinatorEventObserver {
         dispatch(event);
     }
 
+    public void onLifecycleOperation(
+            @ObservesAsync CoordinatorEvent.LifecycleOperationEvent event) {
+        dispatch(event);
+    }
+
+
     private void dispatch(CoordinatorEvent event) {
         ring.add(event);
         accumulator.collect(new LevelEvent<>(event, event.timestamp().toEpochMilli(), COORDINATOR_LEVEL));

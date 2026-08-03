@@ -23,12 +23,15 @@ public class LifecycleManager {
     @Inject
     @WorkspaceChanged
     Event<Path> workspaceChanged;
+    @Inject
+    Event<io.hortora.trellis.coordinator.CoordinatorEvent.LifecycleOperationEvent> lifecycleOperationEvent;
+
 
     private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public OperationResult start(Path workspaceRoot, String branch, String issue)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "start", () -> {
             var routeResult = scriptRunner.run("work", "work_router.py",
                     List.of(branch, workspaceRoot.toString(), workspaceRoot.toString()));
             if (!routeResult.success()) return routeResult;
@@ -46,7 +49,7 @@ public class LifecycleManager {
 
     public OperationResult end(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "end", () -> {
             var rebaseResult = scriptRunner.run("work-end", "land_branch.py",
                     List.of("rebase", workspaceRoot.toString()));
             if (!rebaseResult.success()) return rebaseResult;
@@ -64,7 +67,7 @@ public class LifecycleManager {
 
     public OperationResult pause(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "pause", () -> {
             var wipResult = scriptRunner.run("work-pause", "pause_exec.py",
                     List.of("commit-wip", workspaceRoot.toString()));
             if (!wipResult.success()) return wipResult;
@@ -78,7 +81,7 @@ public class LifecycleManager {
 
     public OperationResult resume(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "resume", () -> {
             var checkoutResult = scriptRunner.run("work-resume", "resume_exec.py",
                     List.of("checkout-branches", workspaceRoot.toString()));
             if (!checkoutResult.success()) return checkoutResult;
@@ -96,7 +99,7 @@ public class LifecycleManager {
 
     public OperationResult slotCreate(Path workspaceRoot, List<String> args)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "slotCreate", () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",
                     prepend("create-slot", args));
             fireWorkspaceChanged(workspaceRoot);
@@ -106,7 +109,7 @@ public class LifecycleManager {
 
     public OperationResult slotMerge(String slotId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "slotMerge", () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",
                     List.of("merge-slot", slotId));
             fireWorkspaceChanged(workspaceRoot);
@@ -116,7 +119,7 @@ public class LifecycleManager {
 
     public OperationResult epicSetup(Path workspaceRoot, List<String> args)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock(workspaceRoot.toString(), () -> {
+        return withLock(workspaceRoot.toString(), "epicSetup", () -> {
             var result = scriptRunner.run("work-slot", "epic_manager.py",
                     prepend("write", args));
             fireWorkspaceChanged(workspaceRoot);
@@ -126,7 +129,7 @@ public class LifecycleManager {
 
     public OperationResult epicNext(String epicPath)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        return withLock("epic-next", () ->
+        return withLock("epic-next", "epicNext", () ->
                 scriptRunner.run("work-slot", "epic_manager.py",
                         List.of("advance", epicPath)));
     }
@@ -141,17 +144,18 @@ public class LifecycleManager {
         if (lock != null) lock.unlock();
     }
 
-    private OperationResult withLock(String key, LockedOperation operation)
+    private OperationResult withLock(String key, String operationName, LockedOperation operation)
             throws IOException, InterruptedException, ConcurrentOperationException {
         if (!tryLock(key)) {
             throw new ConcurrentOperationException("Operation already in progress for: " + key);
         }
         try {
-            return operation.execute();
+            var result = operation.execute();
+            fireLifecycleOperationEvent(operationName, result);
+            return result;
         } finally {
             unlock(key);
-        }
-    }
+        }}
 
     private void fireWorkspaceChanged(Path root) {
         try {
@@ -160,6 +164,20 @@ public class LifecycleManager {
             LOG.debugf(e, "Failed to fire WorkspaceChanged event for %s", root);
         }
     }
+
+    private void fireLifecycleOperationEvent(String operationName, OperationResult result) {
+        try {
+            if (lifecycleOperationEvent != null) {
+                var event = new io.hortora.trellis.coordinator.CoordinatorEvent.LifecycleOperationEvent(
+                        java.time.Instant.now(), operationName, operationName,
+                        result.success(), result.stderr());
+                lifecycleOperationEvent.fireAsync(event);
+            }
+        } catch (Exception e) {
+            LOG.debugf(e, "Failed to fire LifecycleOperationEvent for %s", operationName);
+        }
+    }
+
 
     private List<String> prepend(String first, List<String> rest) {
         var result = new java.util.ArrayList<String>();

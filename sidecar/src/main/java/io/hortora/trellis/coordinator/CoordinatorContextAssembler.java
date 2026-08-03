@@ -13,6 +13,8 @@ public class CoordinatorContextAssembler {
     private final EventRing ring;
     private final ConversationStore conversationStore;
     private final int maxConversationTurns;
+    private ActionService actionService;
+
 
     @Inject
     public CoordinatorContextAssembler(EventRing ring, ConversationStore conversationStore,
@@ -26,13 +28,46 @@ public class CoordinatorContextAssembler {
         this.maxConversationTurns = maxTurns;
     }
 
+    void setActionService(ActionService actionService) {
+        this.actionService = actionService;
+    }
+
+    private void appendPendingActions(StringBuilder sb, String workspace) {
+        if (actionService == null) {return;}
+        var pending = actionService.pendingActions(workspace);
+        if (!pending.isEmpty()) {
+            sb.append("\n## Pending Actions\n");
+            for (var a : pending) {
+                sb.append("- [%s] %s %s (status=%s)\n"
+                                  .formatted(a.id(), a.actionType(), a.params(), a.status()));
+            }
+        }
+    }
+
+    private void appendActionHistory(StringBuilder sb, String workspace) {
+        if (actionService == null) {return;}
+        var history = actionService.actionHistory(workspace, 10);
+        if (!history.isEmpty()) {
+            sb.append("\n## Recent Action Outcomes\n");
+            for (var a : history) {
+                sb.append("- %s %s → %s: %s\n"
+                                  .formatted(a.actionType(), a.params(), a.status(),
+                                             a.executionResult() != null ? a.executionResult() : ""));
+            }
+        }
+    }
+
+
     public String assembleProactivePrompt(List<CoordinatorEvent> eventBatch, EpicAnalysis analysis) {
         var sb = new StringBuilder();
         appendAnalysisContext(sb, analysis);
         sb.append("\n\n## Recent Events\n");
-        for (var e : eventBatch) sb.append("- ").append(formatEvent(e)).append("\n");
-        return CoordinatorPrompts.proactiveTemplate(sb.toString());
-    }
+        for (var e : eventBatch) {sb.append("- ").append(formatEvent(e)).append("\n");}
+        var workspace = eventBatch.stream().map(CoordinatorEvent::key)
+                                  .filter(k -> k != null && !k.isEmpty()).findFirst().orElse("default");
+        appendPendingActions(sb, workspace);
+        appendActionHistory(sb, workspace);
+        return CoordinatorPrompts.proactiveTemplate(sb.toString());}
 
     public String assembleInteractivePrompt(String workspace, EpicAnalysis analysis,
                                              String userMessage, boolean isDirective) {
@@ -40,11 +75,12 @@ public class CoordinatorContextAssembler {
         appendAnalysisContext(sb, analysis);
         appendRecentEvents(sb);
         appendConversation(sb, workspace);
+        appendPendingActions(sb, workspace);
+        appendActionHistory(sb, workspace);
         var template = isDirective
-                ? CoordinatorPrompts.directiveTemplate(userMessage)
-                : CoordinatorPrompts.conversationalTemplate(userMessage);
-        return sb + "\n\n" + template;
-    }
+                       ? CoordinatorPrompts.directiveTemplate(userMessage)
+                       : CoordinatorPrompts.conversationalTemplate(userMessage);
+        return sb + "\n\n" + template;}
 
     public String assembleEnhancementPrompt(EpicAnalysis analysis) {
         var recs = analysis.recommendations().stream()
@@ -93,6 +129,7 @@ public class CoordinatorContextAssembler {
             case CoordinatorEvent.WorkspaceChangedEvent e -> "WorkspaceChanged: " + e.workspaceRoot();
             case CoordinatorEvent.AnalysisEvent e -> "AnalysisRecomputed: " + e.epicRef() + " unblocked=" + e.newlyUnblocked();
             case CoordinatorEvent.IssueEvent e -> "IssueEvent: " + e.issueKey() + " action=" + e.action();
-        };
-    }
+            case CoordinatorEvent.ActionStateChangedEvent e -> "ActionStateChanged: " + e.actionId() + " " + e.oldStatus() + "→" + e.newStatus() + " (" + e.actionType() + ")";
+            case CoordinatorEvent.LifecycleOperationEvent e -> "LifecycleOperation: " + e.operation() + " success=" + e.success() + " " + e.detail();
+        };}
 }

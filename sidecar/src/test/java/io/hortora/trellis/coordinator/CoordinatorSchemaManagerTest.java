@@ -5,7 +5,9 @@ import org.sqlite.SQLiteDataSource;
 
 import java.util.ArrayList;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CoordinatorSchemaManagerTest {
 
@@ -55,12 +57,29 @@ class CoordinatorSchemaManagerTest {
             try (var conn = ds.getConnection();
                  var rs = conn.createStatement().executeQuery("PRAGMA user_version")) {
                 assertTrue(rs.next());
-                assertEquals(1, rs.getInt(1));
+                assertEquals(2, rs.getInt(1));
             }
         } finally {
             java.nio.file.Files.deleteIfExists(dbFile);
         }
     }
+
+    @Test
+    void schemaV2CreatesActionsTable() throws Exception {
+        var dbFile = java.nio.file.Files.createTempFile("coord-test-", ".db");
+        try {
+            var ds = createDataSource(dbFile);
+            new CoordinatorSchemaManager().initialize(ds);
+            try (var conn = ds.getConnection();
+                 var rs = conn.createStatement().executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='coordinator_actions'")) {
+                assertTrue(rs.next(), "coordinator_actions table should exist");
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(dbFile);
+        }
+    }
+
 
     private SQLiteDataSource createDataSource(java.nio.file.Path dbFile) {
         var ds = new SQLiteDataSource();

@@ -19,12 +19,28 @@ interface ConversationTurn {
     timestamp: string;
 }
 
+interface ProposedAction {
+    id: string;
+    category: 'LIFECYCLE' | 'AGENT' | 'ADVISORY';
+    actionType: string;
+    params: Record<string, string>;
+    risk: 'LOW' | 'HIGH';
+    rationale: string;
+    status: 'PROPOSED' | 'APPROVED' | 'CONFIRMING' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'REJECTED' | 'EXPIRED';
+    adviceId: string;
+    workspace: string;
+    proposedAt: string;
+    resolvedAt: string | null;
+    executionResult: string | null;
+}
+
 @customElement('trellis-coordinator-panel')
 export class CoordinatorPanel extends LitElement {
     @property() workspaceRoot = '';
     @property() epicRef = '';
     @state() private advice: CoordinatorAdvice[] = [];
     @state() private conversation: ConversationTurn[] = [];
+    @state() private actions: Map<string, ProposedAction> = new Map();
     @state() private inputValue = '';
     @state() private loading = false;
     private eventSource: EventSource | null = null;
@@ -85,6 +101,17 @@ export class CoordinatorPanel extends LitElement {
             font-size: 0.7rem; font-weight: 600; color: #666;
             text-transform: uppercase; padding: 0.5rem; letter-spacing: 0.05em;
         }
+        .action-buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+        .btn-approve { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; background: #166534; color: white; cursor: pointer; font-size: 0.75rem; }
+        .btn-reject { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; background: #991b1b; color: white; cursor: pointer; font-size: 0.75rem; }
+        .btn-confirm { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; background: #b45309; color: white; cursor: pointer; font-size: 0.75rem; }
+        .btn-cancel { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; background: #333; color: #aaa; cursor: pointer; font-size: 0.75rem; }
+        .action-confirm { margin-top: 0.5rem; padding: 0.5rem; background: #2d1f00; border-radius: 4px; }
+        .confirm-warning { font-size: 0.8rem; color: #fde68a; margin-bottom: 0.5rem; }
+        .action-status { margin-top: 0.5rem; font-size: 0.75rem; }
+        .action-status.executing { color: #60a5fa; }
+        .action-status.completed { color: #86efac; }
+        .action-status.failed { color: #fca5a5; }
     `;
 
     override connectedCallback() {
@@ -106,15 +133,27 @@ export class CoordinatorPanel extends LitElement {
         ]);
         if (adviceRes.ok) this.advice = await adviceRes.json();
         if (convRes.ok) this.conversation = await convRes.json();
+
+        for (const a of this.advice.filter(a => a.actionKey)) {
+            const res = await fetch(`/api/coordinator/actions/${a.actionKey}`);
+            if (res.ok) {
+                const action: ProposedAction = await res.json();
+                this.actions = new Map(this.actions).set(a.id, action);
+            }
+        }
     }
 
     private _connectSSE() {
-        this.eventSource = new EventSource('/api/push?topics=coordinator:advice,coordinator:message');
+        this.eventSource = new EventSource('/api/push?topics=coordinator:advice,coordinator:message,coordinator:action');
         this.eventSource.addEventListener('coordinator:advice', (e: MessageEvent) => {
             this.advice = [JSON.parse(e.data), ...this.advice];
         });
         this.eventSource.addEventListener('coordinator:message', (e: MessageEvent) => {
             this.conversation = [...this.conversation, JSON.parse(e.data)];
+        });
+        this.eventSource.addEventListener('coordinator:action', (e: MessageEvent) => {
+            const action: ProposedAction = JSON.parse(e.data);
+            this.actions = new Map(this.actions).set(action.adviceId, action);
         });
     }
 
@@ -148,20 +187,70 @@ export class CoordinatorPanel extends LitElement {
         this.advice = this.advice.filter(a => a.id !== id);
     }
 
+    private async _approveAction(id: string) {
+        const res = await fetch(`/api/coordinator/actions/${id}/approve`, { method: 'POST' });
+        if (res.ok) { const action = await res.json(); this.actions = new Map(this.actions).set(action.adviceId, action); }
+    }
+
+    private async _rejectAction(id: string) {
+        const res = await fetch(`/api/coordinator/actions/${id}/reject`, { method: 'POST' });
+        if (res.ok) { const action = await res.json(); this.actions = new Map(this.actions).set(action.adviceId, action); }
+    }
+
+    private async _confirmAction(id: string) {
+        const res = await fetch(`/api/coordinator/actions/${id}/confirm`, { method: 'POST' });
+        if (res.ok) { const action = await res.json(); this.actions = new Map(this.actions).set(action.adviceId, action); }
+    }
+
+    private async _cancelAction(id: string) {
+        const res = await fetch(`/api/coordinator/actions/${id}/cancel`, { method: 'POST' });
+        if (res.ok) { const action = await res.json(); this.actions = new Map(this.actions).set(action.adviceId, action); }
+    }
+
+    private _renderActionControls(action: ProposedAction) {
+        switch (action.status) {
+            case 'PROPOSED':
+                return html`
+                    <div class="action-buttons">
+                        <button class="btn-approve" @click=${() => this._approveAction(action.id)}>Approve</button>
+                        <button class="btn-reject" @click=${() => this._rejectAction(action.id)}>Reject</button>
+                    </div>`;
+            case 'CONFIRMING':
+                return html`
+                    <div class="action-confirm">
+                        <div class="confirm-warning">${action.rationale}</div>
+                        <button class="btn-confirm" @click=${() => this._confirmAction(action.id)}>Confirm</button>
+                        <button class="btn-cancel" @click=${() => this._cancelAction(action.id)}>Cancel</button>
+                    </div>`;
+            case 'EXECUTING':
+                return html`<div class="action-status executing">Executing...</div>`;
+            case 'COMPLETED':
+                return html`<div class="action-status completed">✓ ${action.executionResult ?? 'Done'}</div>`;
+            case 'FAILED':
+                return html`<div class="action-status failed">✗ ${action.executionResult ?? 'Failed'}</div>`;
+            default:
+                return nothing;
+        }
+    }
+
     override render() {
         return html`
             <div class="advice-feed">
                 <div class="section-label">Advisor</div>
                 ${this.advice.length === 0
                     ? html`<div class="advice-empty">No active advice</div>`
-                    : this.advice.map(a => html`
-                        <div class="advice-card">
-                            <span class="dismiss" @click=${() => this._dismiss(a.id)}>✕</span>
-                            <span class="badge badge-${a.type}">${a.type}</span>
-                            <span class="advice-title">${a.title}</span>
-                            <div class="advice-body">${a.body}</div>
-                        </div>
-                    `)}
+                    : this.advice.map(a => {
+                        const action = a.actionKey ? this.actions.get(a.id) : null;
+                        return html`
+                            <div class="advice-card">
+                                <span class="dismiss" @click=${() => this._dismiss(a.id)}>✕</span>
+                                <span class="badge badge-${a.type}">${a.type}</span>
+                                <span class="advice-title">${a.title}</span>
+                                <div class="advice-body">${a.body}</div>
+                                ${action ? this._renderActionControls(action) : nothing}
+                            </div>
+                        `;
+                    })}
             </div>
             <div class="chat-area">
                 <div class="section-label">Conversation</div>
