@@ -42,6 +42,9 @@ public class CoordinatorService {
     @Inject CoordinatorConfig config;
     @Inject @CoordinatorDataSourceProducer.CoordinatorDS DataSource dataSource;
     @Inject EventBroadcaster broadcaster;
+    @Inject
+            ActionService    actionService;
+
 
     private final Semaphore llmSemaphore = new Semaphore(1);
     private final AtomicInteger eventsProcessed = new AtomicInteger(0);
@@ -77,15 +80,15 @@ public class CoordinatorService {
 
     @jakarta.annotation.PostConstruct
     void start() {
-        if (!config.enabled()) return;
+        if (!config.enabled()) {return;}
+        contextAssembler.setActionService(actionService);
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "coordinator-tick");
             t.setDaemon(true);
             return t;
         });
         scheduler.scheduleAtFixedRate(() -> tick(System.currentTimeMillis()),
-                1, 1, TimeUnit.SECONDS);
-    }
+                                      1, 1, TimeUnit.SECONDS);}
 
     @jakarta.annotation.PreDestroy
     void stop() {
@@ -122,7 +125,7 @@ public class CoordinatorService {
         conversationStore.append(request.workspace(), ConversationTurn.Role.USER, request.message());
 
         boolean isDirective = request.message().startsWith("/");
-        var analysis = latestAnalysis;
+        var     analysis    = latestAnalysis;
 
         try {
             if (!llmSemaphore.tryAcquire(30, TimeUnit.SECONDS)) {
@@ -136,22 +139,27 @@ public class CoordinatorService {
             var prompt = contextAssembler.assembleInteractivePrompt(
                     request.workspace(), analysis, request.message(), isDirective);
             var taskType = isDirective
-                    ? CoordinatorTask.TaskType.DIRECTIVE
-                    : CoordinatorTask.TaskType.CONVERSATIONAL;
+                           ? CoordinatorTask.TaskType.DIRECTIVE
+                           : CoordinatorTask.TaskType.CONVERSATIONAL;
             var convDepth = conversationStore.history(request.workspace(), 1000).size();
-            var task = new CoordinatorTask(taskType, prompt.length() / 4, ring.size(), convDepth, request.workspace());
+            var task      = new CoordinatorTask(taskType, prompt.length() / 4, ring.size(), convDepth, request.workspace());
 
             var response = invokeLlm(prompt, task);
             conversationStore.append(request.workspace(), ConversationTurn.Role.COORDINATOR, response);
 
-            var turns = conversationStore.history(request.workspace(), 1);
+            var advice = parseAdviceResponse(response);
+            if (advice != null && ActionResponseParser.parseAction(response).isPresent()) {
+                persistAdviceWithAction(request.workspace(), advice, response);
+                if (broadcaster != null) broadcaster.broadcast("coordinator:advice", advice);
+            }
+
+            var turns  = conversationStore.history(request.workspace(), 1);
             var result = turns.getLast();
-            if (broadcaster != null) broadcaster.broadcast("coordinator:message", result);
+            if (broadcaster != null) {broadcaster.broadcast("coordinator:message", result);}
             return result;
         } finally {
             llmSemaphore.release();
-        }
-    }
+        }}
 
     public List<ConversationTurn> conversationHistory(String workspace, int maxTurns) {
         return conversationStore.history(workspace, maxTurns);
@@ -253,27 +261,26 @@ public class CoordinatorService {
 
 
     private void generateProactiveAdvice(List<CoordinatorEvent> batch) {
-        if (latestAnalysis == null) return;
+        if (latestAnalysis == null) {return;}
 
         var workspace = batch.stream().map(CoordinatorEvent::key).filter(k -> k != null && !k.isEmpty()).findFirst().orElse("default");
-        var prompt = contextAssembler.assembleProactivePrompt(batch, latestAnalysis);
+        var prompt    = contextAssembler.assembleProactivePrompt(batch, latestAnalysis);
         var task = new CoordinatorTask(CoordinatorTask.TaskType.PROACTIVE_ADVICE,
-                prompt.length() / 4, batch.size(), 0, workspace);
+                                       prompt.length() / 4, batch.size(), 0, workspace);
 
         try {
             var response = invokeLlm(prompt, task);
-            if (response.contains("\"none\"")) return;
+            if (response.contains("\"none\"")) {return;}
 
             var advice = parseAdviceResponse(response);
             if (advice != null) {
-                persistAdvice(workspace, advice);
+                persistAdviceWithAction(workspace, advice, response);
                 lastAdviceTime = Instant.now();
-                if (broadcaster != null) broadcaster.broadcast("coordinator:advice", advice);
+                if (broadcaster != null) {broadcaster.broadcast("coordinator:advice", advice);}
             }
         } catch (Exception e) {
             LOG.warnf(e, "Failed to generate proactive advice");
-        }
-    }
+        }}
 
     private CoordinatorAdvice parseAdviceResponse(String response) {
         try {
@@ -332,6 +339,40 @@ public class CoordinatorService {
             LOG.warnf(e, "Failed to persist advice %s", advice.id());
         }
     }
+
+    private void persistAdviceWithAction(String workspace, CoordinatorAdvice advice, String llmResponse) {
+        try (var conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                try (var ps = conn.prepareStatement(
+                        "INSERT INTO coordinator_advice (id, workspace, epic_ref, type, title, body, action_key, created_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    ps.setString(1, advice.id());
+                    ps.setString(2, workspace);
+                    ps.setString(3, advice.epicRef());
+                    ps.setString(4, advice.type().name());
+                    ps.setString(5, advice.title());
+                    ps.setString(6, advice.body());
+                    ps.setString(7, advice.actionKey());
+                    ps.setString(8, advice.timestamp().toString());
+                    ps.executeUpdate();
+                }
+                var parsed = ActionResponseParser.parseAction(llmResponse);
+                if (parsed.isPresent() && actionService != null) {
+                    var a = parsed.get();
+                    actionService.propose(conn, advice.id(), a.category(), a.actionType(),
+                                          a.params(), a.rationale(), workspace);
+                }
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (java.sql.SQLException e) {
+            LOG.warnf(e, "Failed to persist advice with action %s", advice.id());
+        }
+    }
+
 
     private String invokeLlm(String userPrompt, CoordinatorTask task) {
         var sessionConfig = AgentSessionConfig.of(CoordinatorPrompts.systemPrompt(), userPrompt);
