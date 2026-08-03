@@ -1,24 +1,33 @@
 // layout-store.js
 'use strict';
-const Store = require('electron-store');
 
 class LayoutStore {
   constructor() {
-    this._store = new Store({ name: 'trellis-layouts' });
+    this._store = null;
+    this._ready = import('electron-store').then(mod => {
+      this._store = new mod.default({ name: 'trellis-layouts' });
+    });
   }
 
-  save(workspacePath, layout) {
+  async _ensureReady() {
+    await this._ready;
+  }
+
+  async save(workspacePath, layout) {
     if (!layout || !Array.isArray(layout.windows)) {
       throw new Error('Layout must have windows array');
     }
+    await this._ensureReady();
     this._store.set(this._key(workspacePath), layout);
   }
 
-  load(workspacePath) {
+  async load(workspacePath) {
+    await this._ensureReady();
     return this._store.get(this._key(workspacePath)) || null;
   }
 
-  clear(workspacePath) {
+  async clear(workspacePath) {
+    await this._ensureReady();
     this._store.delete(this._key(workspacePath));
   }
 

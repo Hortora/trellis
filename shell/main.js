@@ -13,8 +13,7 @@ const layoutStore = new LayoutStore();
 function showErrorWindow(message) {
   const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const win = new BrowserWindow({ width: 700, height: 500, show: false });
-  const logs = escape(server.getLogs().join('
-'));
+  const logs = escape(server.getLogs().join('\n'));
   const html = `<!DOCTYPE html><html><body style="font-family:monospace;padding:20px;background:#1a1a1a;color:#eee">
     <h2 style="color:#f87171">Trellis failed to start</h2>
     <p>${escape(message)}</p>
