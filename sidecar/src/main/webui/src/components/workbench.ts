@@ -1,0 +1,196 @@
+import { LitElement, html, css, nothing } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import '../views/org-dashboard';
+import '../views/slot-detail';
+import '../views/epic-dashboard';
+import '../views/garden-view';
+import '../views/artifact-panel';
+import '../components/coordinator-panel';
+
+interface PanelDef {
+  icon: string;
+  label: string;
+  tag: string;
+}
+
+const PANELS: Record<string, PanelDef> = {
+  workspace:   { icon: '\u{1F4C1}', label: 'Workspace',   tag: 'trellis-org-dashboard' },
+  slot:        { icon: '\u{1F4CB}', label: 'Slot',         tag: 'trellis-slot-detail' },
+  artifacts:   { icon: '\u{1F4C4}', label: 'Artifacts',    tag: 'trellis-artifact-panel' },
+  garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
+  coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
+  epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
+};
+
+@customElement('trellis-workbench')
+export class TrellisWorkbench extends LitElement {
+
+  @property() workspaceRoot = '';
+
+  @state() private _activePanel = 'workspace';
+  @state() private _panelContext: Record<string, string> = {};
+
+  private _panelCache = new Map<string, HTMLElement>();
+  private _lastRoot = '';
+
+  static override styles = css`
+    :host {
+      display: flex;
+      height: 100%;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .dock-bar {
+      display: flex;
+      flex-direction: column;
+      width: 48px;
+      background: #141414;
+      border-right: 1px solid #333;
+      padding: 4px 0;
+      flex-shrink: 0;
+    }
+
+    .dock-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 44px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 18px;
+      border-left: 2px solid transparent;
+      transition: background 0.15s;
+    }
+
+    .dock-btn:hover { background: #222; }
+    .dock-btn[data-active] {
+      background: #1e1e1e;
+      border-left-color: #3b82f6;
+    }
+
+    .panel-area {
+      flex: 1;
+      overflow: hidden;
+      background: #1e1e1e;
+    }
+
+    .panel-area > * {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  `;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('hashchange', this._onHashChange);
+    this._parseHash();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('hashchange', this._onHashChange);
+  }
+
+  override updated(changed: Map<PropertyKey, unknown>) {
+    if (changed.has('workspaceRoot') && this._lastRoot && this._lastRoot !== this.workspaceRoot) {
+      this._panelCache.forEach(el => el.remove());
+      this._panelCache.clear();
+    }
+    this._lastRoot = this.workspaceRoot;
+  }
+
+  private _onHashChange = () => { this._parseHash(); };
+
+  private _parseHash() {
+    const hash = location.hash;
+    const ctx: Record<string, string> = {};
+
+    const rootMatch = hash.match(/[?&]root=([^&]+)/);
+    if (rootMatch) {
+      this.workspaceRoot = decodeURIComponent(rootMatch[1]);
+    }
+
+    if (hash.match(/^#slot\/(\d+)/)) {
+      const m = hash.match(/^#slot\/(\d+)/)!;
+      this._activePanel = 'slot';
+      ctx['slotNumber'] = m[1];
+    } else if (hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)) {
+      const m = hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)!;
+      this._activePanel = 'epic';
+      ctx['owner'] = m[1];
+      ctx['repo'] = m[2];
+      ctx['epicNumber'] = m[3];
+    } else if (hash.match(/^#coordinator/)) {
+      this._activePanel = 'coordinator';
+      const epicParam = hash.match(/[?&]epic=([^&]+)/);
+      if (epicParam) ctx['epicRef'] = decodeURIComponent(epicParam[1]);
+    } else if (hash.match(/^#artifacts/)) {
+      this._activePanel = 'artifacts';
+    } else if (hash.match(/^#garden/)) {
+      this._activePanel = 'garden';
+    } else {
+      this._activePanel = 'workspace';
+    }
+
+    this._panelContext = ctx;
+  }
+
+  private _activatePanel(id: string) {
+    this._activePanel = id;
+    const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
+    if (id === 'workspace') {
+      location.hash = `#?${root}`;
+    } else {
+      location.hash = `#${id}?${root}`;
+    }
+  }
+
+  private _getOrCreatePanel(id: string): HTMLElement | null {
+    const def = PANELS[id];
+    if (!def) return null;
+
+    let el = this._panelCache.get(id);
+    if (!el) {
+      el = document.createElement(def.tag);
+      this._panelCache.set(id, el);
+    }
+    this._applyContext(el, id);
+    return el;
+  }
+
+  private _applyContext(el: HTMLElement, panelId: string) {
+    const ctx = this._panelContext;
+    (el as any).workspaceRoot = this.workspaceRoot;
+    if (panelId === 'slot' && ctx['slotNumber']) {
+      (el as any).slotNumber = parseInt(ctx['slotNumber']);
+    }
+    if (panelId === 'epic') {
+      (el as any).owner = ctx['owner'] ?? '';
+      (el as any).repo = ctx['repo'] ?? '';
+      (el as any).epicNumber = parseInt(ctx['epicNumber'] ?? '0');
+    }
+    if (panelId === 'coordinator' && ctx['epicRef']) {
+      (el as any).epicRef = ctx['epicRef'];
+    }
+  }
+
+  override render() {
+    const panel = this._getOrCreatePanel(this._activePanel);
+    return html`
+      <div class="dock-bar">
+        ${Object.entries(PANELS).map(([id, def]) => html`
+          <button class="dock-btn"
+                  title=${def.label}
+                  ?data-active=${id === this._activePanel}
+                  @click=${() => this._activatePanel(id)}>
+            ${def.icon}
+          </button>
+        `)}
+      </div>
+      <div class="panel-area">${panel ?? nothing}</div>
+    `;
+  }
+}

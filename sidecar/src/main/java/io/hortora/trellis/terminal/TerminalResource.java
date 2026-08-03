@@ -119,7 +119,6 @@ public class TerminalResource {
         return new AgentSubResource(name, registry, processManager);
     }
 
-
     public record CreateTerminalRequest(String name, String workingDir, String slot,
                                         String repo, String issue, StartAgentRequest agent) {}
 }

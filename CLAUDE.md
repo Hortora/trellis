@@ -61,6 +61,9 @@ npm start                                                  # launch app (require
 - Pages/blocks-ui consumed as Maven SNAPSHOT artifacts via portal: resolutions
 - Electron shell follows sparge pattern: find free port, spawn sidecar, poll health, open window
 - `GET /api/health` — sidecar readiness endpoint
+- Frontend uses a dock-bar workbench shell (`trellis-workbench`) — existing views are panels, not standalone hash-routed pages
+- New panels should use platform rendering primitives (`marked`, pages DSL) — the artifact panel is the reference implementation
+- `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
 
 ## Project Artifacts
 

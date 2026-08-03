@@ -18,7 +18,8 @@
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
     "echarts": "^6.1.0",
-    "lit": "^3.3.3"
+    "lit": "^3.3.3",
+    "marked": "^15.0.12"
   },
   "resolutions": {
     "@casehubio/pages-component": "portal:./.casehub-packages/packages/pages-component",
