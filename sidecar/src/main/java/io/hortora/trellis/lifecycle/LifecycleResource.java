@@ -17,6 +17,9 @@ public class LifecycleResource {
     @Inject
     LifecycleManager manager;
 
+    @Inject
+    SlotAgentCoordinator coordinator;
+
     @POST
     @Path("/start")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -29,21 +32,21 @@ public class LifecycleResource {
     @Path("/end/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response end(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> manager.end(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        return execute(() -> coordinator.coordinatedEnd(slotId, java.nio.file.Path.of(request.workspaceRoot())));
     }
 
     @POST
     @Path("/pause/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response pause(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> manager.pause(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        return execute(() -> coordinator.coordinatedPause(slotId, java.nio.file.Path.of(request.workspaceRoot())));
     }
 
     @POST
     @Path("/resume/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response resume(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> manager.resume(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        return execute(() -> coordinator.coordinatedResume(slotId, java.nio.file.Path.of(request.workspaceRoot())));
     }
 
     @POST
@@ -80,17 +83,17 @@ public class LifecycleResource {
                 return Response.ok(result).build();
             }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(result).build();
+                           .entity(result).build();
         } catch (ConcurrentOperationException e) {
             return Response.status(Response.Status.CONFLICT)
-                    .entity(Map.of("error", e.getMessage())).build();
+                           .entity(Map.of("error", e.getMessage())).build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return Response.serverError()
-                    .entity(Map.of("error", e.getMessage())).build();
+                           .entity(Map.of("error", e.getMessage())).build();
         } catch (IOException e) {
             return Response.serverError()
-                    .entity(Map.of("error", e.getMessage())).build();
+                           .entity(Map.of("error", e.getMessage())).build();
         }
     }
 
@@ -100,6 +103,8 @@ public class LifecycleResource {
     }
 
     public record StartRequest(String workspaceRoot, String branch, String issue) {}
+
     public record WorkspaceRequest(String workspaceRoot) {}
+
     public record SlotCreateRequest(String workspaceRoot, List<String> args) {}
 }

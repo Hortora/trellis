@@ -4,5 +4,6 @@ public enum AgentState {
     IDLE,
     STARTING,
     RUNNING,
-    PAUSED
+    PAUSED,
+    PAUSED_BY_COORDINATOR
 }

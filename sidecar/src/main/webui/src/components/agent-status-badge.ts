@@ -7,6 +7,7 @@ export class AgentStatusBadge extends LitElement {
   @property() state: string = 'IDLE';
   @property({ type: Number }) memoryMb: number = 0;
   @property() lastError: string | null = null;
+  @property({ type: Boolean }) evictionCandidate = false;
 
   static override styles = css`
     :host { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
@@ -22,7 +23,8 @@ export class AgentStatusBadge extends LitElement {
     .badge-error { background: #7f1d1d; color: #fca5a5; }
 
     .memory { font-family: monospace; color: #9ca3af; }
-    .memory.warning { color: #f87171; font-weight: 600; }
+    .memory.amber { color: #fbbf24; font-weight: 600; }
+    .memory.critical { color: #f87171; font-weight: 600; animation: pulse 1.5s ease-in-out infinite; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -31,16 +33,20 @@ export class AgentStatusBadge extends LitElement {
   `;
 
   override render() {
-    const hasError = this.lastError && this.state === 'IDLE';
-    const stateClass = hasError ? 'error' : this.state.toLowerCase();
-    const label = hasError ? 'error' : this.state.toLowerCase();
+    const normalizedState = this.state === 'PAUSED_BY_COORDINATOR' ? 'PAUSED' : this.state;
+    const hasError = this.lastError && normalizedState === 'IDLE';
+    const stateClass = hasError ? 'error' : normalizedState.toLowerCase();
+    const label = hasError ? 'error' : normalizedState.toLowerCase();
+
+    const memoryClass = this.evictionCandidate ? 'critical'
+        : this.memoryMb > 500 ? 'amber' : '';
 
     return html`
       <span class="badge badge-${stateClass}" title=${this.lastError ?? ''}>
         ${label}
       </span>
-      ${this.state === 'RUNNING' && this.memoryMb > 0 ? html`
-        <span class="memory ${this.memoryMb > 500 ? 'warning' : ''}">
+      ${normalizedState === 'RUNNING' && this.memoryMb > 0 ? html`
+        <span class="memory ${memoryClass}">
           ${this.memoryMb} MB
         </span>
       ` : nothing}

@@ -72,7 +72,7 @@ class ActionProposalIntegrationTest {
 
         var lifecycleMgr = new LifecycleActionExecutorTest.StubLifecycleManager(
                 new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), ""));
-        var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr);
+        var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr, null);
         var service = ActionService.forTest(sds, List.of(lifecycleExec));
 
         var action = service.propose("adv2", ActionCategory.LIFECYCLE,
@@ -95,7 +95,7 @@ class ActionProposalIntegrationTest {
 
         var lifecycleMgr = new LifecycleActionExecutorTest.StubLifecycleManager(
                 new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), ""));
-        var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr);
+        var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr, null);
         var service = ActionService.forTest(sds, List.of(lifecycleExec));
 
         service.propose("adv3", ActionCategory.LIFECYCLE, "slot.merge",

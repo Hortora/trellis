@@ -14,9 +14,13 @@ import java.util.concurrent.TimeUnit;
 public class AgentMonitorScheduler {
 
     @Inject
-    TerminalRegistry    registry;
+    TerminalRegistry                       registry;
     @Inject
-    AgentProcessManager processManager;
+    AgentProcessManager                    processManager;
+    @Inject
+    MemoryPressureMonitor                  memoryMonitor;
+    @Inject
+    io.casehub.pages.push.EventBroadcaster broadcaster;
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
             r -> Thread.ofVirtual().name("agent-monitor").unstarted(r));
@@ -26,8 +30,17 @@ public class AgentMonitorScheduler {
     }
 
     void poll() {
-        for (var terminal : registry.list()) {
+        var terminals = registry.list();
+        for (var terminal : terminals) {
             processManager.pollTerminal(terminal);
+        }
+        var snapshots  = processManager.getAllSnapshots(terminals);
+        var candidates = memoryMonitor.evaluate(snapshots);
+        try {
+            broadcaster.broadcast("agent:eviction",
+                                  java.util.Map.of("candidates", candidates));
+        } catch (Exception e) {
+            // broadcast failure is non-fatal
         }
     }
 }

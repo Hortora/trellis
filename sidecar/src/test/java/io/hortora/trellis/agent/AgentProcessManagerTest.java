@@ -196,6 +196,96 @@ class AgentProcessManagerTest {
         assertNull(agents().get("t1"));
     }
 
+
+    @Test
+    void bootstrapRecoversPausedByCoordinatorState() throws Exception {
+        when(tmux.getOption("t1", "@trellis_agent_state"))
+                .thenReturn(Optional.of("PAUSED_BY_COORDINATOR"));
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        manager.initializeFromBootstrap(List.of(terminal));
+        var snapshot = manager.getSnapshot("t1", terminal);
+        assertNotNull(snapshot.process());
+        assertEquals(AgentState.PAUSED_BY_COORDINATOR, snapshot.process().state());
+    }
+
+    @Test
+    void pausedByCoordinatorPreservedAcrossMonitorCycles() throws Exception {
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        agents().put("t1", AgentProcess.pausedByCoordinator("claude"));
+
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
+        when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
+
+        manager.pollTerminal(terminal);
+
+        var snapshot = manager.getSnapshot("t1", terminal);
+        assertNotNull(snapshot.process());
+        assertEquals(AgentState.PAUSED_BY_COORDINATOR, snapshot.process().state());
+    }
+
+
+    @Test
+    void gracefulShutdownSendsEscapeThenExit() throws Exception {
+        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        String psOutput = "  100     1  1024 /bin/zsh\n  101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude\n";
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
+        when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
+        manager.pollTerminalWithPsOutput(terminal, psOutput);
+        assertEquals(AgentState.RUNNING, manager.getSnapshot("t1", terminal).process().state());
+
+        org.mockito.Mockito.reset(tmux);
+        when(tmux.displayMessage("t1", "#{pane_current_command}"))
+                .thenReturn("node")
+                .thenReturn("zsh");
+
+        manager.gracefulShutdown("t1");
+
+        var inOrder = org.mockito.Mockito.inOrder(tmux);
+        inOrder.verify(tmux).sendKeys("t1", "Escape");
+        inOrder.verify(tmux).sendKeys("t1", "/exit\n");
+        var snapshot = manager.getSnapshot("t1", terminal);
+        assertNotNull(snapshot.process());
+        assertEquals(AgentState.PAUSED_BY_COORDINATOR, snapshot.process().state());
+    }
+
+    @Test
+    void gracefulShutdownSkipsExitIfShellAppearsAfterEscape() throws Exception {
+        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        String psOutput = "  100     1  1024 /bin/zsh\n  101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude\n";
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
+        when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
+        manager.pollTerminalWithPsOutput(terminal, psOutput);
+
+        org.mockito.Mockito.reset(tmux);
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
+
+        manager.gracefulShutdown("t1");
+
+        verify(tmux).sendKeys("t1", "Escape");
+        verify(tmux, org.mockito.Mockito.never()).sendKeys(eq("t1"), eq("/exit\n"));
+        assertEquals(AgentState.PAUSED_BY_COORDINATOR,
+                     manager.getSnapshot("t1", terminal).process().state());
+    }
+
+    @Test
+    void gracefulShutdownIsNoOpForIdleAgent() throws Exception {
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        manager.gracefulShutdown("t1");
+        assertNull(manager.getSnapshot("t1", terminal).process());
+    }
+
+    @Test
+    void gracefulShutdownUsesTreeKillForStartingAgent() throws Exception {
+        manager.setStarting("t1", "claude");
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        manager.gracefulShutdown("t1");
+        verify(tmux, org.mockito.Mockito.never()).sendKeys(eq("t1"), eq("Escape"));
+        verify(tmux, org.mockito.Mockito.never()).sendKeys(eq("t1"), eq("/exit\n"));
+        assertEquals(AgentState.PAUSED_BY_COORDINATOR,
+                     manager.getSnapshot("t1", terminal).process().state());
+    }
+
+
     @Test
     void pauseAgentRejectsIdleState() {
         assertThrows(IllegalStateException.class, () -> manager.pauseAgent("t1"));

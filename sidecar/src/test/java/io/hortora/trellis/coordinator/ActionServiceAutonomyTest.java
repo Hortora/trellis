@@ -8,13 +8,15 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sqlite.SQLiteDataSource;
 
 import javax.sql.DataSource;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActionServiceAutonomyTest {
 
@@ -119,7 +121,7 @@ class ActionServiceAutonomyTest {
         var lifecycleExecutor = new LifecycleActionExecutorTest.StubLifecycleManager(
                 new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), "done"));
         var svc = ActionService.forTest(dataSource,
-                List.of(new LifecycleActionExecutor(lifecycleExecutor)),
+                List.of(new LifecycleActionExecutor(lifecycleExecutor, stubCoordinator(lifecycleExecutor))),
                 autonomyResolver, countdownScheduler, preferences);
 
         var action = svc.propose("adv1", ActionCategory.LIFECYCLE, "lifecycle.end",
@@ -149,5 +151,27 @@ class ActionServiceAutonomyTest {
         var action = svc.propose("adv1", ActionCategory.ADVISORY, "advisory.prioritise",
                 Map.of("issueKey", "#5"), "ready", "/ws");
         assertEquals(ActionStatus.PROPOSED, svc.getAction(action.id()).status());
+    }
+
+    private static io.hortora.trellis.lifecycle.SlotAgentCoordinator stubCoordinator(
+            LifecycleActionExecutorTest.StubLifecycleManager stub) {
+        var coord = new io.hortora.trellis.lifecycle.SlotAgentCoordinator();
+        try {
+            var lmField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("lifecycleManager");
+            lmField.setAccessible(true);
+            lmField.set(coord, stub);
+            var trField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("terminalRegistry");
+            trField.setAccessible(true);
+            trField.set(coord, new io.hortora.trellis.terminal.TerminalRegistry(null) {
+                @Override
+                public java.util.List<io.hortora.trellis.terminal.TerminalInfo> list() {
+                    return java.util.List.of();
+                }
+            });
+            var amField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("agentProcessManager");
+            amField.setAccessible(true);
+            amField.set(coord, org.mockito.Mockito.mock(io.hortora.trellis.agent.AgentProcessManager.class));
+        } catch (Exception e) {throw new RuntimeException(e);}
+        return coord;
     }
 }

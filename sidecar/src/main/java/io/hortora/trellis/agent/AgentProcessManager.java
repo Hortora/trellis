@@ -41,8 +41,12 @@ public class AgentProcessManager {
         for (var terminal : terminals) {
             try {
                 var paused = tmux.getOption(terminal.name(), "@trellis_agent_state");
-                if (paused.isPresent() && "PAUSED".equals(paused.get())) {
-                    agents.put(terminal.name(), AgentProcess.paused(null));
+                if (paused.isPresent()) {
+                    if ("PAUSED_BY_COORDINATOR".equals(paused.get())) {
+                        agents.put(terminal.name(), AgentProcess.pausedByCoordinator(null));
+                    } else if ("PAUSED".equals(paused.get())) {
+                        agents.put(terminal.name(), AgentProcess.paused(null));
+                    }
                 }
             } catch (IOException | InterruptedException e) {
                 LOG.debugf("Could not read agent state for %s: %s", terminal.name(), e.getMessage());
@@ -86,7 +90,7 @@ public class AgentProcessManager {
         var existing = agents.get(name);
         var existingState = existing != null ? existing.state() : null;
 
-        if (existingState == AgentState.PAUSED) return;
+        if (existingState == AgentState.PAUSED || existingState == AgentState.PAUSED_BY_COORDINATOR) return;
 
         if (existingState == AgentState.STARTING) {
             var startTime = startingTimestamps.get(name);
@@ -173,7 +177,8 @@ public class AgentProcessManager {
 
     public void resumeAgent(String terminalName) throws IOException, InterruptedException {
         var existing = agents.get(terminalName);
-        if (existing == null || existing.state() != AgentState.PAUSED) {
+        if (existing == null || (existing.state() != AgentState.PAUSED
+                                 && existing.state() != AgentState.PAUSED_BY_COORDINATOR)) {
             throw new IllegalStateException("Cannot resume agent in state: " +
                                             (existing != null ? existing.state() : "IDLE"));
         }
@@ -196,6 +201,55 @@ public class AgentProcessManager {
         try {Thread.sleep(500);} catch (InterruptedException ignored) {}
         tmux.sendKeys(terminalName, "claude -c\n");
     }
+
+    public void gracefulShutdown(String terminalName) throws IOException, InterruptedException {
+        var lock = lockFor(terminalName);
+        lock.lock();
+        try {
+            var existing = agents.get(terminalName);
+            if (existing == null) {return;}
+
+            var state = existing.state();
+            if (state != AgentState.RUNNING && state != AgentState.STARTING) {return;}
+
+            if (state == AgentState.STARTING) {
+                if (existing.pid() > 0) {treeKill(terminalName, existing.pid());}
+                markPausedByCoordinator(terminalName, existing.command());
+                return;
+            }
+
+            tmux.sendKeys(terminalName, "Escape");
+            Thread.sleep(500);
+
+            var cmd = tmux.displayMessage(terminalName, "#{pane_current_command}").trim();
+            if (!SHELL_COMMANDS.contains(cmd)) {
+                tmux.sendKeys(terminalName, "/exit\n");
+                long deadline = System.currentTimeMillis() + 10_000;
+                while (System.currentTimeMillis() < deadline) {
+                    Thread.sleep(500);
+                    cmd = tmux.displayMessage(terminalName, "#{pane_current_command}").trim();
+                    if (SHELL_COMMANDS.contains(cmd)) {break;}
+                }
+                if (!SHELL_COMMANDS.contains(cmd) && existing.pid() > 0) {
+                    treeKill(terminalName, existing.pid());
+                }
+            }
+
+            markPausedByCoordinator(terminalName, existing.command());
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void markPausedByCoordinator(String terminalName, String command)
+            throws IOException, InterruptedException {
+        tmux.setOption(terminalName, "@trellis_agent_state", "PAUSED_BY_COORDINATOR");
+        agents.put(terminalName, AgentProcess.pausedByCoordinator(command));
+        startingTimestamps.remove(terminalName);
+        lastErrors.remove(terminalName);
+        broadcastState(terminalName);
+    }
+
 
     private void verifyShellForeground(String terminalName) throws IOException, InterruptedException {
         var cmd = tmux.displayMessage(terminalName, "#{pane_current_command}").trim();

@@ -43,6 +43,9 @@ export class TrellisSlotDetail extends LitElement {
   @state() private _snapshots: AgentSnapshot[] = [];
   @state() private _error: string | null = null;
   @state() private _actionInProgress: string | null = null;
+  @state() private _evictionCandidates: Set<string> = new Set();
+  @state() private _totalAgentMemoryMb = 0;
+  private _eventSource: EventSource | null = null;
 
   static override styles = css`
     :host { display: flex; height: 100%; font-family: system-ui, -apple-system, sans-serif; }
@@ -94,12 +97,42 @@ export class TrellisSlotDetail extends LitElement {
 
     .error { color: #f87171; padding: 1rem; }
     .loading { color: #666; padding: 2rem; text-align: center; }
+
+    .pressure-banner {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 1rem;
+      background: #450a0a; border-bottom: 1px solid #991b1b;
+      font-size: 0.8rem; color: #fca5a5;
+    }
+    .evict-btn {
+      padding: 0.15rem 0.5rem; border: 1px solid #991b1b; border-radius: 3px;
+      background: #7f1d1d; color: #fca5a5; cursor: pointer; font-size: 0.7rem;
+    }
+    .evict-btn:hover { background: #991b1b; }
   `;
 
   override connectedCallback() {
     super.connectedCallback();
     this._loadSlot();
     this._loadTerminals();
+    this._subscribeEvents();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this._eventSource?.close();
+  }
+
+  private _subscribeEvents() {
+    this._eventSource = new EventSource('/api/push?topics=agent:state,agent:eviction');
+    this._eventSource.addEventListener('agent:state', () => this._loadTerminals());
+    this._eventSource.addEventListener('agent:eviction', (e: Event) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data);
+        const candidates = data.candidates ?? [];
+        this._evictionCandidates = new Set(candidates.map((c: { terminalName: string }) => c.terminalName));
+        this._totalAgentMemoryMb = candidates.reduce((sum: number, c: { memoryBytes: number }) => sum + Math.round(c.memoryBytes / (1024 * 1024)), 0);
+      } catch { /* ignore parse errors */ }
+    });
   }
 
   override render() {
@@ -119,6 +152,11 @@ export class TrellisSlotDetail extends LitElement {
     return html`
       <div class="main">
         ${this._renderToolbar()}
+        ${this._evictionCandidates.size > 0 ? html`
+          <div class="pressure-banner">
+            ⚠ Memory pressure: ${this._totalAgentMemoryMb} MB across ${this._evictionCandidates.size} agent(s)
+          </div>
+        ` : nothing}
         <div class="terminal-area">
           <trellis-terminal-tab-group .tabs=${tabs}></trellis-terminal-tab-group>
         </div>
@@ -182,6 +220,7 @@ export class TrellisSlotDetail extends LitElement {
                       .state=${s.process?.state ?? 'IDLE'}
                       .memoryMb=${s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0}
                       .lastError=${s.lastError}
+                      .evictionCandidate=${this._evictionCandidates.has(s.terminalName)}
                     ></agent-status-badge>
                   </div>
                   <div style="display:flex;gap:0.3rem;margin-bottom:0.75rem">
@@ -218,8 +257,13 @@ export class TrellisSlotDetail extends LitElement {
                   @click=${() => this._agentAction(s.terminalName, 'pause')}>pause</button>
           <button class="action-btn danger" ?disabled=${disabled}
                   @click=${() => this._agentAction(s.terminalName, 'stop')}>stop</button>
+          ${this._evictionCandidates.has(s.terminalName) ? html`
+            <button class="evict-btn" ?disabled=${disabled}
+                    @click=${() => this._agentAction(s.terminalName, 'pause')}>evict</button>
+          ` : nothing}
         `;
       case 'PAUSED':
+      case 'PAUSED_BY_COORDINATOR':
         return html`
           <button class="action-btn primary" ?disabled=${disabled}
                   @click=${() => this._agentAction(s.terminalName, 'resume')}>resume</button>

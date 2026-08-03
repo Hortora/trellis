@@ -29,7 +29,7 @@ class ActionServiceTest {
         var advisoryExecutor = new AdvisoryActionExecutor();
         var lifecycleExecutor = new LifecycleActionExecutorTest.StubLifecycleManager(
                 new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), ""));
-        var lifecycleActionExecutor = new LifecycleActionExecutor(lifecycleExecutor);
+        var lifecycleActionExecutor = new LifecycleActionExecutor(lifecycleExecutor, null);
 
         service = ActionService.forTest(dataSource, List.of(lifecycleActionExecutor, advisoryExecutor));
     }

@@ -12,4 +12,9 @@ public record AgentProcess(
     public static AgentProcess paused(String command) {
         return new AgentProcess(0, AgentState.PAUSED, 0, null, command);
     }
+
+    public static AgentProcess pausedByCoordinator(String command) {
+        return new AgentProcess(0, AgentState.PAUSED_BY_COORDINATOR, 0, null, command);
+    }
+
 }
