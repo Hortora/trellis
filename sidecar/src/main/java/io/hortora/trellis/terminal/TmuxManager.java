@@ -56,6 +56,16 @@ public class TmuxManager {
         }
     }
 
+    public String displayMessage(String sessionName, String format)
+            throws IOException, InterruptedException {
+        var p = new ProcessBuilder("tmux", "display-message", "-t", sessionName, "-p", format)
+                        .redirectErrorStream(false).start();
+        var output = new String(p.getInputStream().readAllBytes()).trim();
+        p.waitFor();
+        return output;
+    }
+
+
     public void setOption(String name, String key, String value) throws IOException, InterruptedException {
         run("tmux", "set-option", "-t", name, key, value);
     }

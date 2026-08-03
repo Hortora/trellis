@@ -47,6 +47,12 @@ npm start                                                  # launch app (require
 /opt/homebrew/bin/mvn -f sidecar/pom.xml package -DskipTests && npm start
 ```
 
+## Work Tracking
+
+**Issue tracking:** enabled
+**GitHub repo:** Hortora/trellis
+**Changelog:** GitHub Releases (run `gh release create --generate-notes` at milestones)
+
 ## Key Conventions
 
 - Java 21 — records, sealed interfaces, pattern matching

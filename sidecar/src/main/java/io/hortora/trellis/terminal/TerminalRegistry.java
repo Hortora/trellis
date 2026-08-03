@@ -10,15 +10,15 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
-public class SessionRegistry {
+public class TerminalRegistry {
 
-    private static final Logger LOG = Logger.getLogger(SessionRegistry.class);
+    private static final Logger LOG = Logger.getLogger(TerminalRegistry.class);
 
-    private final TmuxManager tmux;
-    private final ConcurrentHashMap<String, SessionInfo> sessions = new ConcurrentHashMap<>();
+    private final TmuxManager                             tmux;
+    private final ConcurrentHashMap<String, TerminalInfo> sessions = new ConcurrentHashMap<>();
 
     @Inject
-    public SessionRegistry(TmuxManager tmux) {
+    public TerminalRegistry(TmuxManager tmux) {
         this.tmux = tmux;
     }
 
@@ -30,7 +30,7 @@ public class SessionRegistry {
         if (repo != null) tmux.setOption(name, "@trellis_repo", repo);
         if (issue != null) tmux.setOption(name, "@trellis_issue", issue);
 
-        sessions.put(name, new SessionInfo(name, workingDir, slot, repo, issue));
+        sessions.put(name, new TerminalInfo(name, workingDir, slot, repo, issue));
     }
 
     public void destroySession(String name) throws IOException, InterruptedException {
@@ -43,11 +43,11 @@ public class SessionRegistry {
     }
 
 
-    public Optional<SessionInfo> get(String name) {
+    public Optional<TerminalInfo> get(String name) {
         return Optional.ofNullable(sessions.get(name));
     }
 
-    public List<SessionInfo> list() {
+    public List<TerminalInfo> list() {
         return List.copyOf(sessions.values());
     }
 
@@ -58,7 +58,7 @@ public class SessionRegistry {
                 String slot = tmux.getOption(name, "@trellis_slot").orElse(null);
                 String repo = tmux.getOption(name, "@trellis_repo").orElse(null);
                 String issue = tmux.getOption(name, "@trellis_issue").orElse(null);
-                sessions.put(name, new SessionInfo(name, null, slot, repo, issue));
+                sessions.put(name, new TerminalInfo(name, null, slot, repo, issue));
                 LOG.infof("Bootstrapped session: %s (slot=%s, repo=%s, issue=%s)", name, slot, repo, issue);
             }
         } catch (IOException | InterruptedException e) {

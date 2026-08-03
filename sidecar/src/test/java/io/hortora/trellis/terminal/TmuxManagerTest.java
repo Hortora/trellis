@@ -1,11 +1,17 @@
 package io.hortora.trellis.terminal;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class TmuxManagerTest {
@@ -109,5 +115,22 @@ class TmuxManagerTest {
         manager.createSession(sessionName, "/tmp");
 
         assertDoesNotThrow(() -> manager.resizeWindow(sessionName, 120, 40));
+    }
+
+    @Test
+    void displayMessageReturnsPanePid() throws IOException, InterruptedException {
+        manager.createSession(sessionName, "/tmp");
+        String panePid = manager.displayMessage(sessionName, "#{pane_pid}");
+        assertFalse(panePid.isBlank());
+        assertTrue(panePid.matches("\\d+"), "Expected numeric PID, got: " + panePid);
+    }
+
+    @Test
+    void displayMessageReturnsPaneCurrentCommand() throws IOException, InterruptedException {
+        manager.createSession(sessionName, "/tmp");
+        String cmd = manager.displayMessage(sessionName, "#{pane_current_command}");
+        assertFalse(cmd.isBlank());
+        assertTrue(cmd.matches("(bash|zsh|sh|dash|fish)"),
+                   "Expected shell command, got: " + cmd);
     }
 }

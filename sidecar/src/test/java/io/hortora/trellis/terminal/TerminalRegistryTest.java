@@ -8,13 +8,13 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-class SessionRegistryTest {
+class TerminalRegistryTest {
 
     static final String PREFIX = "trellis-test-";
 
-    TmuxManager tmux;
-    SessionRegistry registry;
-    String sessionName;
+    TmuxManager      tmux;
+    TerminalRegistry registry;
+    String           sessionName;
 
     @BeforeAll
     static void checkTmux() throws IOException, InterruptedException {
@@ -26,7 +26,7 @@ class SessionRegistryTest {
     @BeforeEach
     void setUp() {
         tmux = new TmuxManager();
-        registry = new SessionRegistry(tmux);
+        registry = new TerminalRegistry(tmux);
         sessionName = PREFIX + UUID.randomUUID().toString().substring(0, 6);
     }
 

@@ -1,10 +1,14 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import './terminal-panel';
+import './agent-status-badge';
 
 interface TabEntry {
   name: string;
   sessionName: string;
+  agentState?: string;
+  memoryMb?: number;
+  lastError?: string | null;
 }
 
 @customElement('trellis-terminal-tab-group')
@@ -47,7 +51,15 @@ export class TrellisTerminalTabGroup extends LitElement {
           <button
             class="tab ${i === this._activeIndex ? 'active' : ''}"
             @click=${() => { this._activeIndex = i; }}
-          >${tab.name}</button>
+          >${tab.name}
+            ${tab.agentState ? html`
+              <agent-status-badge
+                .state=${tab.agentState}
+                .memoryMb=${tab.memoryMb ?? 0}
+                .lastError=${tab.lastError ?? null}
+              ></agent-status-badge>
+            ` : nothing}
+          </button>
         `)}
       </div>
       <div class="terminal-area">

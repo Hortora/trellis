@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/terminal-tab-group';
+import '../components/agent-status-badge';
 
 interface SlotInfo {
   number: number;
@@ -11,12 +12,25 @@ interface SlotInfo {
   repos: string[];
 }
 
-interface SessionInfo {
-  name: string;
-  workingDir: string | null;
-  slot: string | null;
-  repo: string | null;
-  issue: string | null;
+interface AgentProcess {
+  pid: number;
+  state: string;
+  memoryBytes: number;
+  startedAt: string | null;
+  command: string | null;
+}
+
+interface AgentSnapshot {
+  terminalName: string;
+  terminal: {
+    name: string;
+    workingDir: string | null;
+    slot: string | null;
+    repo: string | null;
+    issue: string | null;
+  };
+  process: AgentProcess | null;
+  lastError: string | null;
 }
 
 @customElement('trellis-slot-detail')
@@ -26,7 +40,7 @@ export class TrellisSlotDetail extends LitElement {
   @property() workspaceRoot = '';
 
   @state() private _slot: SlotInfo | null = null;
-  @state() private _sessions: SessionInfo[] = [];
+  @state() private _snapshots: AgentSnapshot[] = [];
   @state() private _error: string | null = null;
   @state() private _actionInProgress: string | null = null;
 
@@ -85,16 +99,22 @@ export class TrellisSlotDetail extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this._loadSlot();
-    this._loadSessions();
+    this._loadTerminals();
   }
 
   override render() {
     if (this._error) return html`<div class="error">${this._error}</div>`;
     if (!this._slot) return html`<div class="loading">Loading slot ${this.slotNumber}...</div>`;
 
-    const tabs = this._sessions
-        .filter(s => s.slot === String(this.slotNumber))
-        .map(s => ({ name: s.repo ?? s.name, sessionName: s.name }));
+    const tabs = this._snapshots
+        .filter(s => s.terminal.slot === String(this.slotNumber))
+        .map(s => ({
+          name: s.terminal.repo ?? s.terminalName,
+          sessionName: s.terminalName,
+          agentState: s.process?.state ?? 'IDLE',
+          memoryMb: s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0,
+          lastError: s.lastError,
+        }));
 
     return html`
       <div class="main">
@@ -151,13 +171,23 @@ export class TrellisSlotDetail extends LitElement {
         </div>
 
         <div class="sidebar-section">
-          <h3>Sessions</h3>
-          ${this._sessions.filter(s => s.slot === String(this.slotNumber)).length === 0
-            ? html`<div class="meta-item">No active sessions. Create one from the terminal.</div>`
-            : html`<ul class="repo-list">
-                ${this._sessions.filter(s => s.slot === String(this.slotNumber))
-                    .map(s => html`<li>${s.name}</li>`)}
-              </ul>`}
+          <h3>Terminals</h3>
+          ${this._snapshots.filter(s => s.terminal.slot === String(this.slotNumber)).length === 0
+            ? html`<div class="meta-item">No active terminals.</div>`
+            : this._snapshots.filter(s => s.terminal.slot === String(this.slotNumber))
+                .map(s => html`
+                  <div class="meta-item" style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.5rem">
+                    <span class="meta-value" style="flex:1">${s.terminalName}</span>
+                    <agent-status-badge
+                      .state=${s.process?.state ?? 'IDLE'}
+                      .memoryMb=${s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0}
+                      .lastError=${s.lastError}
+                    ></agent-status-badge>
+                  </div>
+                  <div style="display:flex;gap:0.3rem;margin-bottom:0.75rem">
+                    ${this._renderAgentButtons(s)}
+                  </div>
+                `)}
         </div>
       </div>
     `;
@@ -176,10 +206,60 @@ export class TrellisSlotDetail extends LitElement {
     }
   }
 
-  private async _loadSessions() {
+  private _renderAgentButtons(s: AgentSnapshot) {
+    const state = s.process?.state ?? 'IDLE';
+    const disabled = !!this._actionInProgress;
+    switch (state) {
+      case 'RUNNING':
+        return html`
+          <button class="action-btn" ?disabled=${disabled}
+                  @click=${() => this._agentAction(s.terminalName, 'refresh')}>refresh</button>
+          <button class="action-btn" ?disabled=${disabled}
+                  @click=${() => this._agentAction(s.terminalName, 'pause')}>pause</button>
+          <button class="action-btn danger" ?disabled=${disabled}
+                  @click=${() => this._agentAction(s.terminalName, 'stop')}>stop</button>
+        `;
+      case 'PAUSED':
+        return html`
+          <button class="action-btn primary" ?disabled=${disabled}
+                  @click=${() => this._agentAction(s.terminalName, 'resume')}>resume</button>
+        `;
+      case 'IDLE':
+        return html`
+          <button class="action-btn primary" ?disabled=${disabled}
+                  @click=${() => this._agentAction(s.terminalName, 'start')}>start</button>
+        `;
+      case 'STARTING':
+        return html`<span class="meta-item">starting...</span>`;
+      default:
+        return nothing;
+    }
+  }
+
+  private async _agentAction(terminalName: string, action: string) {
+    this._actionInProgress = action;
     try {
-      const res = await fetch('/api/sessions');
-      if (res.ok) this._sessions = await res.json();
+      const res = await fetch(`/api/terminals/${terminalName}/agent/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: action === 'start' ? '{}' : undefined,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        this._error = body?.error ?? `${action} failed: HTTP ${res.status}`;
+      }
+      this._loadTerminals();
+    } catch (e) {
+      this._error = `${action} failed: ${e}`;
+    } finally {
+      this._actionInProgress = null;
+    }
+  }
+
+  private async _loadTerminals() {
+    try {
+      const res = await fetch('/api/terminals');
+      if (res.ok) this._snapshots = await res.json();
     } catch { /* ignore */ }
   }
 
@@ -208,7 +288,7 @@ export class TrellisSlotDetail extends LitElement {
         this._error = body?.error ?? `${name} failed: HTTP ${res.status}`;
       }
       this._loadSlot();
-      this._loadSessions();
+      this._loadTerminals();
     } catch (e) {
       this._error = `${name} failed: ${e}`;
     } finally {

@@ -18,7 +18,7 @@ public class TerminalWebSocket {
     TmuxManager tmux;
 
     @Inject
-    SessionRegistry registry;
+    TerminalRegistry registry;
 
     private final ConcurrentHashMap<String, String> sessionNames = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> fifoPaths = new ConcurrentHashMap<>();

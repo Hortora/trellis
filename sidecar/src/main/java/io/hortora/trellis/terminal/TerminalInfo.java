@@ -1,6 +1,6 @@
 package io.hortora.trellis.terminal;
 
-public record SessionInfo(
+public record TerminalInfo(
         String name,
         String workingDir,
         String slot,
