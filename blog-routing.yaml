@@ -1,13 +1,19 @@
 extends: ~/.claude/blog-routing.yaml
 
 # trellis workspace — blog entries live in blog/
-# Hortora project → personal-notes only (not casehub)
+# Hortora project → published to hortora.github.io/_posts/
+
+destinations:
+  hortora-posts:
+    type: git
+    path: ~/claude/hortora/hortora.github.io/
+    subdir: _posts/
 
 rules:
   - match:
       project: trellis
-    destinations: [personal-notes]
+    destinations: [hortora-posts]
   - match:
       project: trellis
       entry_type: article
-    destinations: [personal-articles]
+    destinations: [hortora-posts]
