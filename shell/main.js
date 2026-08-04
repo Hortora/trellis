@@ -5,6 +5,7 @@ const path = require('path');
 const { JavaServer, findFreePort } = require('./java-server');
 const { WindowManager } = require('./window-manager');
 const { LayoutStore } = require('./layout-store');
+const { HealthMonitor } = require('./health-monitor');
 
 const server = new JavaServer({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
 let wm = null;
@@ -25,6 +26,13 @@ function showErrorWindow(message) {
 
 function registerIpcHandlers() {
   ipcMain.handle('app:version', () => app.getVersion());
+
+  ipcMain.handle('dialog:openFolder', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
 
   ipcMain.handle('window:create', async (_event, route, opts) => {
     const win = await wm.createWindow(route, opts);
@@ -70,6 +78,15 @@ app.whenReady().then(async () => {
 
     registerIpcHandlers();
     await server.spawnServer(port);
+
+    const healthMonitor = new HealthMonitor({ port });
+    healthMonitor.on('recovered', () => {
+      for (const win of wm.getWindows()) {
+        if (!win.isDestroyed()) win.reload();
+      }
+    });
+    healthMonitor.start();
+
     await wm.createWindow('/');
   } catch (err) {
     showErrorWindow(err.message);

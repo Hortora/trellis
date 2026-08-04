@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('trellis', {
   getVersion: () => ipcRenderer.invoke('app:version'),
+  openFolderDialog: () => ipcRenderer.invoke('dialog:openFolder'),
 
   createWindow: (route, opts) => ipcRenderer.invoke('window:create', route, opts),
   detachPanel: (panelId, opts) => ipcRenderer.invoke('panel:detach', panelId, opts),
