@@ -45,7 +45,7 @@ public class WorkspaceScanner {
             for (Path entry : stream) {
                 if (!Files.isDirectory(entry)) continue;
                 String name = entry.getFileName().toString();
-                if ("worktrees".equals(name) || name.startsWith(".")) continue;
+                if ("worktrees".equals(name) || "slots".equals(name) || name.startsWith(".")) continue;
 
                 Path gitDir = entry.resolve(".git");
                 if (!Files.isDirectory(gitDir)) continue;
@@ -66,10 +66,10 @@ public class WorkspaceScanner {
 
     private List<SlotInfo> scanSlots(Path root) {
         var slots = new ArrayList<SlotInfo>();
-        Path worktreesDir = root.resolve("worktrees");
-        if (!Files.isDirectory(worktreesDir)) return slots;
+        Path slotsDir = root.resolve("slots");
+        if (!Files.isDirectory(slotsDir)) return slots;
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(worktreesDir)) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(slotsDir)) {
             for (Path slotDir : stream) {
                 if (!Files.isDirectory(slotDir)) continue;
                 String dirName = slotDir.getFileName().toString();
@@ -93,16 +93,16 @@ public class WorkspaceScanner {
                 }
             }
         } catch (IOException e) {
-            LOG.warnf(e, "Failed to scan worktrees under %s", worktreesDir);
+            LOG.warnf(e, "Failed to scan slots under %s", slotsDir);
         }
         return slots;
     }
 
     private void scanWorkspaces(Path root, List<PauseEntry> pauses, List<EpicInfo> epics) {
-        Path worktreesDir = root.resolve("worktrees");
-        if (!Files.isDirectory(worktreesDir)) return;
+        Path slotsDir = root.resolve("slots");
+        if (!Files.isDirectory(slotsDir)) return;
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(worktreesDir)) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(slotsDir)) {
             for (Path slotDir : stream) {
                 if (!Files.isDirectory(slotDir)) continue;
                 String dirName = slotDir.getFileName().toString();
@@ -120,7 +120,7 @@ public class WorkspaceScanner {
                 }
             }
         } catch (IOException e) {
-            LOG.warnf(e, "Failed to scan workspaces under %s", worktreesDir);
+            LOG.warnf(e, "Failed to scan workspaces under %s", slotsDir);
         }
     }
 

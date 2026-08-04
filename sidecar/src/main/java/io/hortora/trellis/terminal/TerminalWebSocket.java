@@ -39,27 +39,26 @@ public class TerminalWebSocket {
         sessionNames.put(connection.id(), sessionName);
 
         try {
-            if (cols > 0 && rows > 0) {
-                tmux.resizeWindow(sessionName, cols, rows);
-            }
-
             new ProcessBuilder("mkfifo", fifoPath)
                     .redirectErrorStream(true).start().waitFor();
             fifoPaths.put(connection.id(), fifoPath);
 
             Thread.ofVirtual().name("trellis-fifo-" + sessionName).start(() -> {
-                try (var in = new BufferedInputStream(new FileInputStream(fifoPath))) {
-                    var buf = new byte[4096];
-                    int n;
-                    while ((n = in.read(buf)) != -1) {
-                        connection.sendTextAndAwait(new String(buf, 0, n));
-                    }
+                try {
+                    new FifoRelay(
+                            new FileInputStream(fifoPath),
+                            text -> connection.sendTextAndAwait(text)
+                    ).relay();
                 } catch (IOException e) {
                     LOG.debugf("FIFO stream ended for session %s: %s", sessionName, e.getMessage());
                 }
             });
 
             tmux.pipePaneToFifo(sessionName, fifoPath);
+
+            if (cols > 0 && rows > 0) {
+                tmux.forceRedraw(sessionName, cols, rows);
+            }
 
         } catch (IOException | InterruptedException e) {
             LOG.errorf("Failed to set up pipe for session %s: %s", sessionName, e.getMessage());

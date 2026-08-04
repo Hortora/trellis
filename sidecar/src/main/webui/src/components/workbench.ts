@@ -29,6 +29,8 @@ const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'coordinator'];
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
 
+  static override shadowRootOptions = { ...LitElement.shadowRootOptions, delegatesFocus: true };
+
   @property() workspaceRoot = '';
 
   @state() private _activePanel = 'workspace';

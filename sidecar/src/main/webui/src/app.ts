@@ -1,3 +1,4 @@
+import '@casehubio/pages-component-terminal';
 import './components/workbench';
 import './views/launcher';
 

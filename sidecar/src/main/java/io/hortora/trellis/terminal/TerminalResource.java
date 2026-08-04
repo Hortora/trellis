@@ -114,6 +114,31 @@ public class TerminalResource {
         }
     }
 
+
+    @Inject
+    TmuxManager tmux;
+
+    @POST
+    @Path("/{name}/resize")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response resize(@PathParam("name") String name, ResizeRequest request) {
+        if (registry.get(name).isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                           .entity(Map.of("error", "terminal not found: " + name))
+                           .build();
+        }
+        try {
+            tmux.resizeWindow(name, request.cols(), request.rows());
+            return Response.noContent().build();
+        } catch (IOException | InterruptedException e) {
+            return Response.serverError()
+                           .entity(Map.of("error", "failed to resize: " + e.getMessage()))
+                           .build();
+        }
+    }
+
+    public record ResizeRequest(int cols, int rows) {}
+
     @Path("/{name}/agent")
     public AgentSubResource agent(@PathParam("name") String name) {
         return new AgentSubResource(name, registry, processManager);

@@ -11,12 +11,10 @@
     "@casehubio/blocks-ui-blocks-timeline": "*",
     "@casehubio/blocks-ui-core": "*",
     "@casehubio/blocks-ui-kpi-metric-row": "*",
+    "@casehubio/pages-component-terminal": "*",
     "@casehubio/pages-runtime": "*",
     "@casehubio/pages-ui": "*",
     "@casehubio/pages-ui-components": "*",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-webgl": "^0.18.0",
-    "@xterm/xterm": "^5.5.0",
     "echarts": "^6.1.0",
     "lit": "^3.3.3",
     "marked": "^15.0.12"
@@ -33,7 +31,8 @@
     "@casehubio/pages-viz": "portal:./.casehub-packages/packages/pages-viz",
     "@casehubio/blocks-ui-core": "portal:./.casehub-packages/packages/blocks-ui-core",
     "@casehubio/blocks-ui-kpi-metric-row": "portal:./.casehub-packages/packages/kpi-metric-row",
-    "@casehubio/blocks-ui-blocks-timeline": "portal:./.casehub-packages/packages/blocks-timeline"
+    "@casehubio/blocks-ui-blocks-timeline": "portal:./.casehub-packages/packages/blocks-timeline",
+    "@casehubio/pages-component-terminal": "portal:./.casehub-packages/packages/pages-component-terminal"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

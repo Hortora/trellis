@@ -133,4 +133,45 @@ class TmuxManagerTest {
         assertTrue(cmd.matches("(bash|zsh|sh|dash|fish)"),
                    "Expected shell command, got: " + cmd);
     }
+
+    @Test
+    void forceRedrawProducesOutputThroughPipe() throws Exception {
+        manager.createSession(sessionName, "/tmp");
+        manager.resizeWindow(sessionName, 80, 24);
+        manager.sendKeys(sessionName, "echo MARKER-REDRAW\n");
+        Thread.sleep(300);
+
+        // Set up a FIFO and pipe
+        String fifoPath = "/tmp/trellis-test-" + sessionName + ".pipe";
+        new ProcessBuilder("mkfifo", fifoPath).redirectErrorStream(true).start().waitFor();
+
+        var captured = new StringBuilder();
+        var readerThread = Thread.ofVirtual().start(() -> {
+            try (var in = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(
+                            new java.io.FileInputStream(fifoPath), java.nio.charset.StandardCharsets.UTF_8))) {
+                var cbuf = new char[4096];
+                int n;
+                while ((n = in.read(cbuf)) != -1) {
+                    captured.append(cbuf, 0, n);
+                }
+            } catch (Exception e) {
+                // FIFO closed
+            }
+        });
+
+        // Start pipe-pane, then force redraw — NO capture-pane
+        manager.pipePaneToFifo(sessionName, fifoPath);
+        manager.forceRedraw(sessionName, 80, 24);
+        Thread.sleep(500);
+
+        manager.stopPipePane(sessionName);
+        java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(fifoPath));
+        readerThread.join(2000);
+
+        assertTrue(captured.toString().contains("MARKER-REDRAW"),
+                   "forceRedraw should cause screen content to flow through pipe-pane, got: "
+                   + captured.toString().substring(0, Math.min(200, captured.length())));
+    }
+
 }

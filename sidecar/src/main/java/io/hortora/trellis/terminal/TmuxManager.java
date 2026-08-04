@@ -15,6 +15,7 @@ public class TmuxManager {
 
     public void createSession(String name, String workingDir) throws IOException, InterruptedException {
         run("tmux", "new-session", "-d", "-s", name, "-c", workingDir);
+        sendKeys(name, "cd " + workingDir + " && clear\n");
     }
 
     public void killSession(String name) throws IOException, InterruptedException {
@@ -47,7 +48,7 @@ public class TmuxManager {
     }
 
     public String capturePane(String name, int lines) throws IOException, InterruptedException {
-        var p = new ProcessBuilder("tmux", "capture-pane", "-t", name, "-p", "-S", String.valueOf(-lines))
+        var p = new ProcessBuilder("tmux", "capture-pane", "-t", name, "-e", "-p", "-S", String.valueOf(-lines))
                 .redirectErrorStream(true).start();
         try (var in = p.getInputStream()) {
             var output = new String(in.readAllBytes());
@@ -82,6 +83,13 @@ public class TmuxManager {
     public void resizeWindow(String name, int cols, int rows) throws IOException, InterruptedException {
         run("tmux", "resize-window", "-t", name, "-x", String.valueOf(cols), "-y", String.valueOf(rows));
     }
+
+    public void forceRedraw(String name, int cols, int rows) throws IOException, InterruptedException {
+        resizeWindow(name, cols - 1, rows);
+        Thread.sleep(50);
+        resizeWindow(name, cols, rows);
+    }
+
 
     public void pipePaneToFifo(String name, String fifoPath) throws IOException, InterruptedException {
         run("tmux", "pipe-pane", "-t", name, "cat > " + fifoPath);
