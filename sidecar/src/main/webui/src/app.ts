@@ -1,6 +1,11 @@
+import { applyTheme } from '@casehubio/pages-ui-tokens';
 import '@casehubio/pages-component-terminal';
 import './components/workbench';
+import './components/memory-panel';
 import './views/launcher';
+
+applyTheme('casehub-dark');
+document.documentElement.classList.add('pages-density-compact');
 
 const container = document.getElementById('app');
 let currentView: 'launcher' | 'workbench' = 'launcher';

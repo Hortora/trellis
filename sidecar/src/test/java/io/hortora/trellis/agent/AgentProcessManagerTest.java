@@ -297,6 +297,64 @@ class AgentProcessManagerTest {
         assertThrows(IllegalStateException.class, () -> manager.resumeAgent("t1"));
     }
 
+    @Test
+    void startAgentRejectsClaudeVersionAsForeground() throws Exception {
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("2.1.221");
+
+        var ex = assertThrows(IllegalStateException.class,
+                              () -> manager.startAgent("t1", new StartAgentRequest(false, null)));
+        assertTrue(ex.getMessage().contains("already running"),
+                   "Expected 'already running' message, got: " + ex.getMessage());
+    }
+
+    @Test
+    void startAgentRetriesWhenForegroundIsEmpty() throws Exception {
+        when(tmux.displayMessage("t1", "#{pane_current_command}"))
+                .thenReturn("")
+                .thenReturn("")
+                .thenReturn("zsh");
+
+        manager.startAgent("t1", new StartAgentRequest(false, null));
+
+        verify(tmux).sendKeys(eq("t1"), eq("claude\n"));
+    }
+
+    @Test
+    void startAgentTimesOutWhenForegroundStaysEmpty() throws Exception {
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("");
+
+        var ex = assertThrows(IllegalStateException.class,
+                              () -> manager.startAgent("t1", new StartAgentRequest(false, null)));
+        assertTrue(ex.getMessage().contains("did not start"),
+                   "Expected timeout message, got: " + ex.getMessage());
+    }
+
+    @Test
+    void pauseSetsPausedStateBeforeKillingProcess() throws Exception {
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        String psOutput = """
+                          100     1  1024 /bin/zsh
+                          101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude
+                          """;
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
+        when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
+        manager.pollTerminalWithPsOutput(terminal, psOutput);
+        assertEquals(AgentState.RUNNING, manager.getSnapshot("t1", terminal).process().state());
+
+        manager.pauseAgent("t1");
+
+        // Simulate a poll cycle arriving AFTER pause (process killed, shell visible)
+        when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
+        manager.pollTerminal(terminal);
+
+        // Agent must still be PAUSED — the poll must NOT have removed it
+        var snapshot = manager.getSnapshot("t1", terminal);
+        assertNotNull(snapshot.process(), "Paused agent should not be removed by poll");
+        assertEquals(AgentState.PAUSED, snapshot.process().state(),
+                     "Agent should remain PAUSED after poll sees shell foreground");
+    }
+
+
     @SuppressWarnings("unchecked")
     private java.util.concurrent.ConcurrentHashMap<String, AgentProcess> agents() {
         try {

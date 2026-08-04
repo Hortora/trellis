@@ -168,11 +168,11 @@ public class AgentProcessManager {
                                             (existing != null ? existing.state() : "IDLE"));
         }
         tmux.setOption(terminalName, "@trellis_agent_state", "PAUSED");
+        agents.put(terminalName, AgentProcess.paused(existing.command()));
+        broadcastState(terminalName);
         if (existing.pid() > 0) {
             treeKill(terminalName, existing.pid());
         }
-        agents.put(terminalName, AgentProcess.paused(existing.command()));
-        broadcastState(terminalName);
     }
 
     public void resumeAgent(String terminalName) throws IOException, InterruptedException {
@@ -252,10 +252,18 @@ public class AgentProcessManager {
 
 
     private void verifyShellForeground(String terminalName) throws IOException, InterruptedException {
-        var cmd = tmux.displayMessage(terminalName, "#{pane_current_command}").trim();
-        if (!SHELL_COMMANDS.contains(cmd)) {
-            throw new IllegalStateException("Terminal foreground is '" + cmd + "', not a shell");
+        for (int attempt = 0; attempt < 5; attempt++) {
+            var cmd = tmux.displayMessage(terminalName, "#{pane_current_command}").trim();
+            if (SHELL_COMMANDS.contains(cmd)) return;
+            if (cmd.contains("claude") || cmd.matches("\\d+\\.\\d+\\.\\d+")) {
+                throw new IllegalStateException("Agent is already running in this terminal (foreground: " + cmd + ")");
+            }
+            if (!cmd.isEmpty()) {
+                throw new IllegalStateException("Terminal foreground is '" + cmd + "', not a shell");
+            }
+            Thread.sleep(200);
         }
+        throw new IllegalStateException("Terminal shell did not start within 1s");
     }
 
     private String buildCommand(StartAgentRequest request) {

@@ -5,7 +5,7 @@ import java.util.*;
 
 public class ProcessTreeWalker {
 
-    public record ProcessTree(long claudePid, long totalRssBytes, List<Long> allPids) {}
+    public record ProcessTree(long claudePid, long totalRssBytes, List<Long> allPids, List<ProcessEntry> entries) {}
 
     public static Optional<ProcessTree> fromPsOutput(String psOutput, long rootPid) {
         var children = new HashMap<Long, List<long[]>>();
@@ -22,7 +22,7 @@ public class ProcessTreeWalker {
                 long rss = Long.parseLong(parts[2]);
                 String args = parts[3];
                 children.computeIfAbsent(ppid, k -> new ArrayList<>()).add(new long[]{pid, rss});
-                entries.put(pid, new String[]{args, String.valueOf(rss)});
+                entries.put(pid, new String[]{args, String.valueOf(rss), String.valueOf(ppid)});
             } catch (NumberFormatException ignored) {}
         }
 
@@ -30,9 +30,10 @@ public class ProcessTreeWalker {
         if (claudePid == null) return Optional.empty();
 
         var allPids = new ArrayList<Long>();
-        long totalRss = collectTree(claudePid, children, entries, allPids);
+        var processEntries = new ArrayList<ProcessEntry>();
+        long totalRss = collectTree(claudePid, children, entries, allPids, processEntries);
 
-        return Optional.of(new ProcessTree(claudePid, totalRss * 1024, List.copyOf(allPids)));
+        return Optional.of(new ProcessTree(claudePid, totalRss * 1024, List.copyOf(allPids), List.copyOf(processEntries)));
     }
 
     public static Optional<ProcessTree> walk(long rootPid) throws IOException, InterruptedException {
@@ -57,13 +58,17 @@ public class ProcessTreeWalker {
     }
 
     private static long collectTree(long pid, Map<Long, List<long[]>> children,
-                                     Map<Long, String[]> entries, List<Long> allPids) {
+                                     Map<Long, String[]> entries, List<Long> allPids,
+                                     List<ProcessEntry> processEntries) {
         allPids.add(pid);
-        long rss = Long.parseLong(entries.get(pid)[1]);
+        var entry = entries.get(pid);
+        long rss = Long.parseLong(entry[1]);
+        long ppid = Long.parseLong(entry[2]);
+        processEntries.add(new ProcessEntry(pid, ppid, rss * 1024, entry[0]));
         var kids = children.get(pid);
         if (kids != null) {
             for (long[] kid : kids) {
-                rss += collectTree(kid[0], children, entries, allPids);
+                rss += collectTree(kid[0], children, entries, allPids, processEntries);
             }
         }
         return rss;

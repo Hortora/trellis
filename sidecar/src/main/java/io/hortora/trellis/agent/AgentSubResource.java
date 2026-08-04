@@ -71,6 +71,41 @@ public class AgentSubResource {
         return Response.ok(processManager.getSnapshot(terminalName, terminal.get())).build();
     }
 
+    @GET
+    @Path("/tree")
+    public Response tree() {
+        var terminal = registry.get(terminalName);
+        if (terminal.isEmpty()) {
+            return Response.status(404).entity(Map.of("error", "terminal not found: " + terminalName)).build();
+        }
+        var snapshot = processManager.getSnapshot(terminalName, terminal.get());
+        if (snapshot.process() == null || snapshot.process().pid() <= 0) {
+            return Response.ok(Map.of("rootPid", 0, "totalBytes", 0, "processes", java.util.List.of())).build();
+        }
+        try {
+            var treeOpt = ProcessTreeWalker.walk(snapshot.process().pid());
+            if (treeOpt.isEmpty()) {
+                return Response.ok(Map.of("rootPid", 0, "totalBytes", 0, "processes", java.util.List.of())).build();
+            }
+            var tree = treeOpt.get();
+            var processes = tree.entries().stream()
+                                .map(e -> Map.of(
+                                        "pid", e.pid(),
+                                        "ppid", e.ppid(),
+                                        "rssBytes", e.rssBytes(),
+                                        "command", e.command()))
+                                .toList();
+            return Response.ok(Map.of(
+                    "rootPid", tree.claudePid(),
+                    "totalBytes", tree.totalRssBytes(),
+                    "processes", processes
+                                     )).build();
+        } catch (IOException | InterruptedException e) {
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+
     private Response executeLifecycle(String operation, LifecycleAction action) {
         var terminal = registry.get(terminalName);
         if (terminal.isEmpty()) {

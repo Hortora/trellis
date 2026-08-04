@@ -1,7 +1,9 @@
 package io.hortora.trellis.agent;
 
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProcessTreeWalkerTest {
 
@@ -64,4 +66,29 @@ class ProcessTreeWalkerTest {
         var tree = ProcessTreeWalker.fromPsOutput(psOutput, 100);
         assertTrue(tree.isEmpty());
     }
+
+    @Test
+    void fromPsOutputReturnsProcessEntries() {
+        String psOutput = """
+                          1234   100  51200 /bin/zsh
+                          1235  1234 262144 /usr/local/bin/node /Users/user/.claude/local/claude --resume
+                          1236  1235  46080 node playwright-mcp
+                          1237  1235  35840 node intellij-mcp
+                          """;
+        var tree = ProcessTreeWalker.fromPsOutput(psOutput, 1234);
+
+        assertTrue(tree.isPresent());
+        var entries = tree.get().entries();
+        assertEquals(3, entries.size());
+
+        var claude = entries.stream().filter(e -> e.pid() == 1235).findFirst().orElseThrow();
+        assertEquals(1234, claude.ppid());
+        assertEquals(262144L * 1024, claude.rssBytes());
+        assertTrue(claude.command().contains("claude"));
+
+        var playwright = entries.stream().filter(e -> e.pid() == 1236).findFirst().orElseThrow();
+        assertEquals(1235, playwright.ppid());
+        assertTrue(playwright.command().contains("playwright"));
+    }
+
 }

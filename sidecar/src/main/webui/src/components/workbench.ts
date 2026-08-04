@@ -20,11 +20,12 @@ const PANELS: Record<string, PanelDef> = {
   artifacts:   { icon: '\u{1F4C4}', label: 'Artifacts',    tag: 'trellis-artifact-panel' },
   garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
   coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
+  memory:      { icon: '\u{1F4CA}', label: 'Memory',       tag: 'trellis-memory-panel' },
   epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
   repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
 };
 
-const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'coordinator'];
+const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'coordinator', 'memory'];
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -142,6 +143,8 @@ export class TrellisWorkbench extends LitElement {
       this._activePanel = 'artifacts';
     } else if (hash.match(/^#garden/)) {
       this._activePanel = 'garden';
+    } else if (hash.match(/^#memory/)) {
+      this._activePanel = 'memory';
     } else {
       this._activePanel = 'workspace';
     }
