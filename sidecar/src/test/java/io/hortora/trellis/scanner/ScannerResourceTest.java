@@ -54,6 +54,64 @@ class ScannerResourceTest {
     }
 
     @Test
+    void scanExpandsTildeInRoot() {
+        String home = System.getProperty("user.home");
+        var resolved = ScannerResource.resolveRoot("~/some/path");
+        var expected = Path.of(home, "some/path").toString();
+        org.junit.jupiter.api.Assertions.assertEquals(expected, resolved.toString());
+    }
+
+    @Test
+    void scanDoesNotExpandTildeInMiddleOfPath() {
+        var resolved = ScannerResource.resolveRoot("/some/~/path");
+        org.junit.jupiter.api.Assertions.assertEquals("/some/~/path", resolved.toString());
+    }
+
+    @Test
+    void scanLeavesAbsolutePathUnchanged() {
+        var resolved = ScannerResource.resolveRoot("/absolute/path");
+        org.junit.jupiter.api.Assertions.assertEquals("/absolute/path", resolved.toString());
+    }
+
+    @Test
+    void repoDetailReturnsBranchAndLog() throws IOException {
+        Files.createDirectories(tempRoot.resolve("engine/.git/refs/heads"));
+        Files.writeString(tempRoot.resolve("engine/.git/HEAD"), "ref: refs/heads/main\n");
+
+        given()
+            .queryParam("root", tempRoot.toString())
+            .when().get("/api/workspace")
+            .then().statusCode(200);
+
+        given()
+            .queryParam("root", tempRoot.toString())
+            .queryParam("repo", "engine")
+            .when().get("/api/workspace/repo")
+            .then()
+            .statusCode(200)
+            .body("name", is("engine"))
+            .body("branch", is("main"));
+    }
+
+    @Test
+    void repoDetailReturns404ForUnknownRepo() throws IOException {
+        Files.createDirectories(tempRoot.resolve("engine/.git/refs/heads"));
+        Files.writeString(tempRoot.resolve("engine/.git/HEAD"), "ref: refs/heads/main\n");
+
+        given()
+            .queryParam("root", tempRoot.toString())
+            .when().get("/api/workspace")
+            .then().statusCode(200);
+
+        given()
+            .queryParam("root", tempRoot.toString())
+            .queryParam("repo", "nonexistent")
+            .when().get("/api/workspace/repo")
+            .then()
+            .statusCode(404);
+    }
+
+    @Test
     void scanIncludesSlots() throws IOException {
         Files.createDirectories(tempRoot.resolve("worktrees/5"));
         Files.writeString(tempRoot.resolve("worktrees/5/.slot"), """

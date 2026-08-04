@@ -95,16 +95,20 @@ public class FileWatcherService {
     }
 
     private void startWatcher(WatchState state) {
-        try {
-            var watcher = DirectoryWatcher.builder()
-                                          .path(state.root)
-                                          .listener(event -> rescan(state.root))
-                                          .build();
-            state.directoryWatcher = watcher;
-            watcher.watchAsync();
-        } catch (IOException e) {
-            LOG.warnf(e, "Failed to start directory watcher for %s — fallback rescan will continue", state.root);
-        }
+        Thread.ofVirtual().name("trellis-watcher-init-" + state.root.getFileName()).start(() -> {
+            if (state.stopped) return;
+            try {
+                var watcher = DirectoryWatcher.builder()
+                                              .path(state.root)
+                                              .listener(event -> rescan(state.root))
+                                              .build();
+                state.directoryWatcher = watcher;
+                watcher.watchAsync();
+                LOG.infof("Directory watcher started for %s", state.root);
+            } catch (IOException e) {
+                LOG.warnf(e, "Failed to start directory watcher for %s — fallback rescan will continue", state.root);
+            }
+        });
     }
 
     private void startRescanFallback(WatchState state) {
