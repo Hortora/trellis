@@ -2,25 +2,36 @@ import './components/workbench';
 import './views/launcher';
 
 const container = document.getElementById('app');
+let currentView: 'launcher' | 'workbench' = 'launcher';
+let workbench: HTMLElement | null = null;
 
 function route() {
   if (!container) return;
   const hash = location.hash;
 
-  container.innerHTML = '';
-
   const rootMatch = hash.match(/[?&]root=([^&]+)/);
-  if (!rootMatch && (hash === '' || hash === '#' || hash === '#launcher')) {
-    const launcher = document.createElement('trellis-launcher');
-    container.appendChild(launcher);
+  const wantsLauncher = !rootMatch && (hash === '' || hash === '#' || hash === '#launcher');
+
+  if (wantsLauncher) {
+    if (currentView !== 'launcher') {
+      container.innerHTML = '';
+      container.appendChild(document.createElement('trellis-launcher'));
+      currentView = 'launcher';
+      workbench = null;
+    }
     return;
   }
 
-  const workbench = document.createElement('trellis-workbench') as any;
-  if (rootMatch) {
-    workbench.workspaceRoot = decodeURIComponent(rootMatch[1]);
+  if (!workbench) {
+    container.innerHTML = '';
+    workbench = document.createElement('trellis-workbench');
+    container.appendChild(workbench);
+    currentView = 'workbench';
   }
-  container.appendChild(workbench);
+
+  if (rootMatch) {
+    (workbench as any).workspaceRoot = decodeURIComponent(rootMatch[1]);
+  }
 }
 
 window.addEventListener('hashchange', route);

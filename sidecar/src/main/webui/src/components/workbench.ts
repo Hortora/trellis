@@ -5,6 +5,7 @@ import '../views/slot-detail';
 import '../views/epic-dashboard';
 import '../views/garden-view';
 import '../views/artifact-panel';
+import '../views/repo-detail';
 import '../components/coordinator-panel';
 
 interface PanelDef {
@@ -20,7 +21,10 @@ const PANELS: Record<string, PanelDef> = {
   garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
   coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
   epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
+  repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
 };
+
+const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'coordinator'];
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -32,6 +36,7 @@ export class TrellisWorkbench extends LitElement {
 
   private _panelCache = new Map<string, HTMLElement>();
   private _lastRoot = '';
+  private _lastHash = new Map<string, string>();
 
   static override styles = css`
     :host {
@@ -77,9 +82,9 @@ export class TrellisWorkbench extends LitElement {
     }
 
     .panel-area > * {
-      display: block;
       width: 100%;
       height: 100%;
+      box-sizing: border-box;
     }
   `;
 
@@ -123,6 +128,10 @@ export class TrellisWorkbench extends LitElement {
       ctx['owner'] = m[1];
       ctx['repo'] = m[2];
       ctx['epicNumber'] = m[3];
+    } else if (hash.match(/^#repo\/([^?]+)/)) {
+      const m = hash.match(/^#repo\/([^?]+)/)!;
+      this._activePanel = 'repo';
+      ctx['repoName'] = decodeURIComponent(m[1]);
     } else if (hash.match(/^#coordinator/)) {
       this._activePanel = 'coordinator';
       const epicParam = hash.match(/[?&]epic=([^&]+)/);
@@ -136,15 +145,23 @@ export class TrellisWorkbench extends LitElement {
     }
 
     this._panelContext = ctx;
+    this._lastHash.set(this._activePanel, hash);
+    if (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo') {
+      this._lastHash.set('workspace', hash);
+    }
   }
 
   private _activatePanel(id: string) {
-    this._activePanel = id;
-    const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
-    if (id === 'workspace') {
-      location.hash = `#?${root}`;
+    const saved = this._lastHash.get(id);
+    if (saved) {
+      location.hash = saved;
     } else {
-      location.hash = `#${id}?${root}`;
+      const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
+      if (id === 'workspace') {
+        location.hash = `#?${root}`;
+      } else {
+        location.hash = `#${id}?${root}`;
+      }
     }
   }
 
@@ -175,20 +192,23 @@ export class TrellisWorkbench extends LitElement {
     if (panelId === 'coordinator' && ctx['epicRef']) {
       (el as any).epicRef = ctx['epicRef'];
     }
+    if (panelId === 'repo' && ctx['repoName']) {
+      (el as any).repoName = ctx['repoName'];
+    }
   }
 
   override render() {
     const panel = this._getOrCreatePanel(this._activePanel);
     return html`
       <div class="dock-bar">
-        ${Object.entries(PANELS).map(([id, def]) => html`
+        ${DOCK_PANELS.map(id => { const def = PANELS[id]; const isActive = id === this._activePanel || (id === 'workspace' && (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo')); return html`
           <button class="dock-btn"
                   title=${def.label}
-                  ?data-active=${id === this._activePanel}
+                  ?data-active=${isActive}
                   @click=${() => this._activatePanel(id)}>
             ${def.icon}
           </button>
-        `)}
+        `;})}
       </div>
       <div class="panel-area">${panel ?? nothing}</div>
     `;

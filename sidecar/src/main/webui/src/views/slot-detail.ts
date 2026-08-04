@@ -165,10 +165,16 @@ export class TrellisSlotDetail extends LitElement {
     `;
   }
 
+  private _goBack() {
+    const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
+    location.hash = `#?${root}`;
+  }
+
   private _renderToolbar() {
     const slot = this._slot!;
     return html`
       <div class="toolbar">
+        <button class="action-btn" @click=${this._goBack} title="Back to workspace">←</button>
         <h2>Slot ${slot.number}</h2>
         <span class="issue-ref">${slot.issue}</span>
         <span class="spacer"></span>

@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { marked } from 'marked';
 
 interface ProvenanceRef {
   issueRepo: string;
@@ -35,8 +36,22 @@ export class GardenEntryDetail extends LitElement {
 
     .body {
       font-family: system-ui, sans-serif; font-size: 0.9rem;
-      color: #ddd; line-height: 1.6; white-space: pre-wrap;
+      color: #ddd; line-height: 1.6;
     }
+    .body :is(h1, h2, h3, h4, h5, h6) { color: #eee; margin-top: 1.5em; }
+    .body h1 { font-size: 1.3rem; border-bottom: 1px solid #333; padding-bottom: 0.3rem; }
+    .body h2 { font-size: 1.1rem; }
+    .body code { background: #2a2a2a; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
+    .body pre { background: #2a2a2a; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    .body pre code { background: none; padding: 0; }
+    .body table { border-collapse: collapse; margin: 1em 0; }
+    .body th, .body td { border: 1px solid #444; padding: 0.4rem 0.8rem; }
+    .body th { background: #2a2a2a; }
+    .body blockquote { border-left: 3px solid #444; margin: 1em 0; padding: 0.5em 1em; color: #999; }
+    .body a { color: #60a5fa; }
+    .body ul, .body ol { padding-left: 1.5em; }
+    .body li { margin: 0.3em 0; }
+    .body p { margin: 0.6em 0; }
 
     h3 { font-size: 1rem; color: #aaa; margin: 1.5rem 0 0.5rem; }
 
@@ -71,7 +86,7 @@ export class GardenEntryDetail extends LitElement {
         <span class="badge badge-score">score: ${this._entry.score}</span>
       </div>
 
-      <div class="body">${this._entry.body}</div>
+      <div class="body" .innerHTML=${marked.parse(this._entry.body || '', { async: false }) as string}></div>
 
       ${this._provenance.length > 0 ? html`
         <h3>Informed by this entry</h3>

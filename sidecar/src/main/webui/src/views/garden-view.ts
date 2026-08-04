@@ -25,13 +25,13 @@ export class GardenView extends LitElement {
 
   static override styles = css`
     :host {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 1rem; padding: 1rem; height: 100vh; box-sizing: border-box;
-      font-family: system-ui, sans-serif; color: #eee;
+      display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr);
+      gap: 1rem; padding: 1rem; height: 100%; box-sizing: border-box;
+      font-family: system-ui, sans-serif; color: #eee; overflow: hidden;
     }
 
-    .left { display: flex; flex-direction: column; overflow: hidden; }
-    .right { overflow-y: auto; }
+    .left { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    .right { overflow-y: auto; min-height: 0; }
 
     .search-bar {
       display: flex; gap: 0.5rem; margin-bottom: 0.8rem; flex-wrap: wrap;

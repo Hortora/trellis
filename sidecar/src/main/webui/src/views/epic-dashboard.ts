@@ -204,7 +204,7 @@ export class TrellisEpicDashboard extends LitElement {
   private _renderHeader(title: string, kpis: EpicAnalysis['kpis']) {
     return html`
       <div class="header">
-        <a class="back-link" @click=${() => history.back()}>back</a>
+        <a class="back-link" @click=${() => { const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : ''; location.hash = `#?${root}`; }}>← back</a>
         <h1>${title}</h1>
         <span class="ref">${this.owner}/${this.repo}#${this.epicNumber}</span>
         <span class="progress-badge">${kpis.closed}/${kpis.total} done</span>

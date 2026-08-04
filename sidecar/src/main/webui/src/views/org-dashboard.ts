@@ -62,6 +62,8 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _loading = false;
   @state() private _root = '';
   @state() private _portfolioData = new Map<string, EpicSummary>();
+  @state() private _recentRoots: string[] = [];
+  @state() private _showRecent = false;
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; }
@@ -81,6 +83,25 @@ export class TrellisOrgDashboard extends LitElement {
     }
     .root-input button:hover { background: #2563eb; }
     .root-input button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .root-input .browse-btn { padding: 0.5rem 0.6rem; background: #333; }
+    .root-input .browse-btn:hover { background: #444; }
+
+    .root-wrapper { position: relative; flex: 1; display: flex; flex-direction: column; }
+
+    .recent-list {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+      background: #2a2a2a; border: 1px solid #444; border-top: none;
+      border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto;
+    }
+    .recent-item {
+      padding: 0.4rem 0.75rem; cursor: pointer; font-family: monospace;
+      font-size: 0.85rem; color: #ccc;
+    }
+    .recent-item:hover { background: #333; color: #fff; }
+    .recent-header {
+      padding: 0.3rem 0.75rem; font-size: 0.7rem; color: #666;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
 
     .section { margin-bottom: 2rem; }
     .section h2 { font-size: 1rem; font-weight: 600; margin: 0 0 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
@@ -122,13 +143,28 @@ export class TrellisOrgDashboard extends LitElement {
       </div>
 
       <div class="root-input">
-        <input
-          type="text"
-          placeholder="Workspace root (e.g., ~/claude/casehub)"
-          .value=${this._root}
-          @input=${(e: Event) => { this._root = (e.target as HTMLInputElement).value; }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this._scan(); }}
-        />
+        ${this._hasBrowse() ? html`
+          <button class="browse-btn" @click=${this._browse} title="Browse for folder">📂</button>
+        ` : nothing}
+        <div class="root-wrapper">
+          <input
+            type="text"
+            placeholder="Workspace root (e.g., ~/claude/casehub)"
+            .value=${this._root}
+            @input=${(e: Event) => { this._root = (e.target as HTMLInputElement).value; }}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this._scan(); }}
+            @focus=${() => { if (this._recentRoots.length > 0) this._showRecent = true; }}
+            @blur=${() => { setTimeout(() => { this._showRecent = false; }, 150); }}
+          />
+          ${this._showRecent && this._recentRoots.length > 0 ? html`
+            <div class="recent-list">
+              <div class="recent-header">Recent</div>
+              ${this._recentRoots.map(r => html`
+                <div class="recent-item" @mousedown=${() => { this._root = r; this._showRecent = false; this._scan(); }}>${r}</div>
+              `)}
+            </div>
+          ` : nothing}
+        </div>
         <button @click=${this._scan} ?disabled=${this._loading}>
           ${this._loading ? 'Scanning...' : 'Scan'}
         </button>
@@ -155,7 +191,7 @@ export class TrellisOrgDashboard extends LitElement {
         ${repos.length === 0
           ? html`<div class="empty">No repos found.</div>`
           : html`<div class="grid">${repos.map(r => html`
-            <div class="card">
+            <div class="card" style="cursor:pointer" @click=${() => this._openRepo(r.name)}>
               <div class="card-name">${r.name}</div>
               <div class="card-meta">
                 <span class="badge badge-branch">${r.branch}</span>
@@ -256,6 +292,40 @@ export class TrellisOrgDashboard extends LitElement {
     location.hash = `#slot/${slotNumber}?root=${encodeURIComponent(this._root)}`;
   }
 
+  private _openRepo(name: string) {
+    location.hash = `#repo/${encodeURIComponent(name)}?root=${encodeURIComponent(this._root)}`;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this._loadRecent();
+  }
+
+  private _hasBrowse(): boolean {
+    return typeof (window as any).trellis?.openFolderDialog === 'function';
+  }
+
+  private async _browse() {
+    const path = await (window as any).trellis.openFolderDialog();
+    if (path) {
+      this._root = path;
+      this._scan();
+    }
+  }
+
+  private _loadRecent() {
+    try {
+      const stored = localStorage.getItem('trellis:recent-roots');
+      this._recentRoots = stored ? JSON.parse(stored) : [];
+    } catch { this._recentRoots = []; }
+  }
+
+  private _saveRecent(root: string) {
+    const filtered = this._recentRoots.filter(r => r !== root);
+    this._recentRoots = [root, ...filtered].slice(0, 5);
+    localStorage.setItem('trellis:recent-roots', JSON.stringify(this._recentRoots));
+  }
+
   private async _scan() {
     if (!this._root.trim()) return;
     this._loading = true;
@@ -268,6 +338,7 @@ export class TrellisOrgDashboard extends LitElement {
         return;
       }
       this._model = await res.json();
+      this._saveRecent(this._root.trim());
       this._fetchPortfolio();
     } catch (e) {
       this._error = `Failed to scan: ${e}`;
