@@ -7,6 +7,7 @@ import '../views/garden-view';
 import '../views/artifact-panel';
 import '../views/repo-detail';
 import '../components/coordinator-panel';
+import '../views/protocol-view';
 
 interface PanelDef {
   icon: string;
@@ -19,13 +20,14 @@ const PANELS: Record<string, PanelDef> = {
   slot:        { icon: '\u{1F4CB}', label: 'Slot',         tag: 'trellis-slot-detail' },
   artifacts:   { icon: '\u{1F4C4}', label: 'Artifacts',    tag: 'trellis-artifact-panel' },
   garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
+  protocols:   { icon: '\u{1F4DC}', label: 'Protocols',    tag: 'trellis-protocol-view' },
   coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
   memory:      { icon: '\u{1F4CA}', label: 'Memory',       tag: 'trellis-memory-panel' },
   epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
   repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
 };
 
-const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'coordinator', 'memory'];
+const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -143,6 +145,8 @@ export class TrellisWorkbench extends LitElement {
       this._activePanel = 'artifacts';
     } else if (hash.match(/^#garden/)) {
       this._activePanel = 'garden';
+    } else if (hash.match(/^#protocols/)) {
+      this._activePanel = 'protocols';
     } else if (hash.match(/^#memory/)) {
       this._activePanel = 'memory';
     } else {

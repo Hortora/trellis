@@ -61,6 +61,8 @@ npm start                                                  # launch app (require
 - Frontend theme: `casehub-dark` via `applyTheme()` + `pages-density-compact` class on documentElement
 - `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
 - `GET /api/terminals` — list all terminal sessions with agent state/memory; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
+- `GET /api/protocols/repos?root=...` — list repos with `docs/protocols/INDEX.md`; `GET /api/protocols/entries?index=...` — parse INDEX.md chain; `POST/DELETE /api/protocols/entries` — add/remove with git commit
+- Protocol panel (`trellis-protocol-view`) — accordion repo list, garden-style entry rows, split-pane layout, garden search integration for adding entries
 
 ## Project Artifacts
 

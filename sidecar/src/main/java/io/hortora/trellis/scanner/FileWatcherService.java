@@ -22,6 +22,7 @@ public class FileWatcherService {
     private static final long   RESCAN_INTERVAL_SECONDS = 60;
     private static final String TOPIC_REPOS             = "workspace:repos";
     private static final String TOPIC_SLOTS             = "workspace:slots";
+    private static final String TOPIC_PROTOCOLS         = "workspace:protocols";
 
     @Inject
     WorkspaceScanner scanner;
@@ -91,6 +92,9 @@ public class FileWatcherService {
         }
         if (!oldModel.slots().equals(newModel.slots())) {
             broadcaster.broadcast(TOPIC_SLOTS, newModel.slots());
+        }
+        if (!oldModel.repos().equals(newModel.repos())) {
+            broadcaster.broadcast(TOPIC_PROTOCOLS, "changed");
         }
     }
 
