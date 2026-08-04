@@ -124,15 +124,17 @@ export class TrellisSlotDetail extends LitElement {
 
   private _subscribeEvents() {
     this._eventSource = new EventSource('/api/push?topics=agent:state,agent:eviction');
-    this._eventSource.addEventListener('agent:state', () => this._loadTerminals());
-    this._eventSource.addEventListener('agent:eviction', (e: Event) => {
+    this._eventSource.onmessage = (e: MessageEvent) => {
+      this._loadTerminals();
       try {
-        const data = JSON.parse((e as MessageEvent).data);
-        const candidates = data.candidates ?? [];
-        this._evictionCandidates = new Set(candidates.map((c: { terminalName: string }) => c.terminalName));
-        this._totalAgentMemoryMb = candidates.reduce((sum: number, c: { memoryBytes: number }) => sum + Math.round(c.memoryBytes / (1024 * 1024)), 0);
+        const data = JSON.parse(e.data);
+        if (data.topic === 'agent:eviction') {
+          const candidates = data.payload?.candidates ?? [];
+          this._evictionCandidates = new Set(candidates.map((c: { terminalName: string }) => c.terminalName));
+          this._totalAgentMemoryMb = candidates.reduce((sum: number, c: { memoryBytes: number }) => sum + Math.round(c.memoryBytes / (1024 * 1024)), 0);
+        }
       } catch { /* ignore parse errors */ }
-    });
+    };
   }
 
   override render() {

@@ -200,7 +200,7 @@ export class TrellisRepoDetail extends LitElement {
 
   private _subscribeEvents() {
     this._eventSource = new EventSource('/api/push?topics=agent:state');
-    this._eventSource.addEventListener('agent:state', () => this._loadTerminal());
+    this._eventSource.onmessage = () => this._loadTerminal();
   }
 
   override render() {
