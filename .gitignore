@@ -17,5 +17,10 @@ sidecar/src/main/webui/.yarn/
 # OS
 .DS_Store
 
+# Playwright MCP
+.mcp.json
+.playwright-mcp/
+package-lock.json
+
 # Workspace
 wksp

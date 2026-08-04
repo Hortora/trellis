@@ -56,8 +56,11 @@ npm start                                                  # launch app (require
 - Electron shell follows sparge pattern: find free port, spawn sidecar, poll health, open window
 - `GET /api/health` — sidecar readiness endpoint
 - Frontend uses a dock-bar workbench shell (`trellis-workbench`) — existing views are panels, not standalone hash-routed pages
-- New panels should use platform rendering primitives (`marked`, pages DSL) — the artifact panel is the reference implementation
+- New panels should use platform rendering primitives (`marked`, pages DSL, `pages-data-table`) — the artifact panel is the reference for markdown, the memory panel is the reference for tabular data
+- Tables use `pages-data-table` with `fromRows()` for data binding, custom `columnRenderers` for badges/buttons, and `mode="paginated"` for content-sized tables
+- Frontend theme: `casehub-dark` via `applyTheme()` + `pages-density-compact` class on documentElement
 - `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
+- `GET /api/terminals` — list all terminal sessions with agent state/memory; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
 
 ## Project Artifacts
 
