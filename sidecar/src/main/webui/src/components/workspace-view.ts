@@ -1,7 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { DockviewComponent, DockviewGroupPanel } from 'dockview-core';
-import 'dockview-core/dist/styles/dockview.css';
 
 interface TabRef {
   terminalName: string;
@@ -53,38 +52,16 @@ export class TrellisWorkspaceView extends LitElement {
   private _lastSaveTime = 0;
 
   static override styles = css`
-    :host {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: #1e1e1e;
-      color: #ccc;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .dockview-container {
-      width: 100%;
-      height: 100%;
-    }
-
-    .empty-state {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      font-size: 14px;
-      opacity: 0.5;
-    }
+    :host { display: block; width: 100%; height: 100%; background: #1e1e1e; color: #ccc; position: relative; overflow: hidden; }
+    .dockview-container { width: 100%; height: 100%; }
   `;
 
   private _keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   override firstUpdated() {
     this._container = this.shadowRoot!.querySelector('.dockview-container') as HTMLDivElement;
-    if (this._container) {
-      this._initDockview();
-    }
+    this._injectDockviewCSS();
+    this._initDockview();
     this._setupFlushHandler();
     this._setupKeyboard();
     this._setupShortcutIPC();
@@ -189,14 +166,21 @@ export class TrellisWorkspaceView extends LitElement {
   private _terminalElements = new Map<string, HTMLElement>();
   private _cssInjected = false;
 
+  private _injectDockviewCSS() {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://cdn.jsdelivr.net/npm/dockview-core@7.0.4/dist/styles/dockview.css';
+    this.shadowRoot!.appendChild(link);
+  }
+
   private _initDockview() {
     if (!this._container) return;
 
     if (!this._cssInjected) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css';
-      this.shadowRoot!.prepend(link);
+      const xtermLink = document.createElement('link');
+      xtermLink.rel = 'stylesheet';
+      xtermLink.href = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css';
+      this.shadowRoot!.appendChild(xtermLink);
       this._cssInjected = true;
     }
 
@@ -227,6 +211,8 @@ export class TrellisWorkspaceView extends LitElement {
 
         return {
           element: wrapper,
+          init: () => {},
+          update: () => {},
           dispose: () => {
             this._terminalElements.delete(terminalName);
             this._activeTerminals.delete(terminalName);
@@ -302,12 +288,20 @@ export class TrellisWorkspaceView extends LitElement {
       this._activeTerminals.add(tab.terminalName);
     }
 
-    const group = this._dockview.addGroup();
-    for (const tab of validTabs) {
+    const firstTab = validTabs[0];
+    const panel = this._dockview.addPanel({
+      id: firstTab.terminalName,
+      title: firstTab.terminalName.replace(/^(repo-|slot-)/, ''),
+      component: 'terminal',
+      floating: { width: 600, height: 400 },
+    });
+    const group = panel.group;
+    for (let i = 1; i < validTabs.length; i++) {
       this._dockview.addPanel({
-        id: tab.terminalName,
-        title: tab.terminalName.replace(/^(repo-|slot-)/, ''),
+        id: validTabs[i].terminalName,
+        title: validTabs[i].terminalName.replace(/^(repo-|slot-)/, ''),
         component: 'terminal',
+        position: { referenceGroup: group },
       });
     }
 
