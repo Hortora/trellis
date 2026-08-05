@@ -26,7 +26,7 @@ public class ArtifactResource {
         if (root == null || root.isBlank()) {
             return Response.status(400).entity(Map.of("error", "root query parameter is required")).build();
         }
-        var rootPath = java.nio.file.Path.of(root);
+        var rootPath = io.hortora.trellis.util.PathUtil.resolveRoot(root);
         if (!Files.isDirectory(rootPath)) {
             return Response.status(404).entity(Map.of("error", "root directory not found: " + root)).build();
         }
@@ -40,7 +40,7 @@ public class ArtifactResource {
         if (root == null || root.isBlank() || path == null || path.isBlank()) {
             return Response.status(400).entity("root and path query parameters are required").build();
         }
-        var rootPath = java.nio.file.Path.of(root);
+        var rootPath = io.hortora.trellis.util.PathUtil.resolveRoot(root);
         if (!Files.isDirectory(rootPath)) {
             return Response.status(404).entity("root directory not found").build();
         }

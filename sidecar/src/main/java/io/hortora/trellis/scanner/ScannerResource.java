@@ -74,12 +74,6 @@ public class ScannerResource {
     }
 
     static java.nio.file.Path resolveRoot(String root) {
-        if (root.startsWith("~/")) {
-            return java.nio.file.Path.of(System.getProperty("user.home"), root.substring(2));
-        }
-        if (root.equals("~")) {
-            return java.nio.file.Path.of(System.getProperty("user.home"));
-        }
-        return java.nio.file.Path.of(root);
+        return io.hortora.trellis.util.PathUtil.resolveRoot(root);
     }
 }

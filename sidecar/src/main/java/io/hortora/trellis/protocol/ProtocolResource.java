@@ -36,7 +36,7 @@ public class ProtocolResource {
             return Response.status(400).entity(Map.of("error", "root required")).build();
         }
         try {
-            java.nio.file.Path rootPath = java.nio.file.Path.of(root).toAbsolutePath().normalize();
+            java.nio.file.Path rootPath = io.hortora.trellis.util.PathUtil.resolveRoot(root);
             var model = watcherService.currentModel(rootPath);
             if (model == null) {
                 return Response.status(404).entity(Map.of("error", "workspace not watched")).build();
