@@ -259,6 +259,16 @@ through the main process via IPC:
 The main process maintains a global LRU list of `{windowId, terminalName,
 lastFocusedAt}` entries to determine demotion order across windows.
 
+**Pending-acquire queue:** When `webgl:acquire` is denied, the request
+is queued as `{windowId, terminalName, lastFocusedAt}` in the main
+process. When a `webgl:release` is processed and the queue is non-empty,
+the main process sends `webgl:grant(terminalName)` to the highest-
+priority (most-recently-focused) waiter. The window promotes the terminal
+to WebGL on receipt. If the terminal has been closed or defocused while
+waiting, the window ignores the grant and replies with `webgl:release` to
+pass the slot to the next waiter. Entries are removed from the queue when
+the owning window closes or the terminal is removed.
+
 ### Ownership
 
 `trellis-workspace-view` owns renderer lifecycle within its window. It
@@ -295,13 +305,23 @@ connection, it closes the previous connection (triggering its `cleanup()`)
 before setting up the new pipe-pane. This prevents the pipe-pane takeover
 problem where the old connection silently stops receiving data.
 
+**Session takeover close code:** When closing the previous connection for
+session takeover, `TerminalWebSocket` uses WebSocket close code `4001`
+with reason `"session-takeover"`. The frontend interprets code 4001 to
+show "Connection moved to another window" with a "Reconnect" button.
+All other close codes (1006 network error, 1001 going away, 1011 server
+error, etc.) show "Disconnected" with reconnect/restart options and
+trigger the exponential backoff retry (§6 step 8). Code 4001 explicitly
+skips retry — reconnecting would steal the session back from the window
+that just claimed it.
+
 Implementation: `TerminalWebSocket` maintains a
 `ConcurrentHashMap<String, WebSocketConnection> activeBySession`
 (keyed by session name, not connection ID). On `onOpen`, call
 `activeBySession.put(sessionName, connection)` — if the previous value
-is non-null and not the same connection, close it. On `cleanup`, remove
-the entry only if it still points to this connection (compare by
-connection ID to avoid closing a newer connection's entry).
+is non-null and not the same connection, close it with code `4001`. On
+`cleanup`, remove the entry only if it still points to this connection
+(compare by connection ID to avoid closing a newer connection's entry).
 
 ### FIFO Lifecycle
 
@@ -479,6 +499,30 @@ The existing `LayoutStore.save()` validation (`Array.isArray(layout.windows)`)
 is superseded. The LayoutStore evolves to provide typed methods:
 `saveGroups`/`loadGroups`, `saveLayout`/`loadLayout`, `saveKeymap`/`loadKeymap`.
 
+### Layout Save Coordination
+
+The main process is the single writer for layout persistence. Each
+renderer sends only its own `ShellLayout` — never the full composite:
+
+1. `onDidLayoutChange` fires in a renderer → debounced at 1s with 5s
+   max-wait (per-window debounce timer).
+2. When the debounce fires, the renderer serializes its Dockview state
+   into a `ShellLayout` and sends it to the main process via
+   `layout:window-save(windowId, shellLayout)`.
+3. The main process maintains an in-memory
+   `Map<windowId, ShellLayout>`. On receipt, it updates the map entry
+   and writes `{ windows: [...map.values()] }` to electron-store.
+4. On BrowserWindow close, the main process removes the entry and writes.
+
+This eliminates the read-modify-write race: renderers never read the
+persisted layout, and the main process is a single-threaded writer.
+
+**Detach save-inhibit:** During a detach sequence (§8), the main process
+sets an inhibit flag that defers layout writes. The flag clears after the
+source window's Dockview group removal is confirmed, at which point any
+deferred saves are flushed. This prevents persisting the transient state
+where a terminal appears in both the source and target windows.
+
 ### Workspace Path Persistence
 
 `LayoutStore` persists `lastWorkspacePath` as a top-level electron-store key
@@ -495,15 +539,19 @@ debounced frontend save can fire. The shutdown sequence must be:
 1. `before-quit` fires, calls `event.preventDefault()`.
 2. Main process sends `layout:flush` IPC to every non-destroyed
    BrowserWindow.
-3. Each window's frontend immediately serializes Dockview state and calls
-   `trellis.saveLayout(workspacePath, layout)` — bypassing the debounce.
-4. Main process awaits all `layout:flush` responses (or 2s timeout —
-   if a window is unresponsive, the last debounced save is the fallback).
+3. Each window's frontend immediately serializes Dockview state and
+   responds with its `ShellLayout` via
+   `layout:window-save(windowId, shellLayout)` — bypassing the local
+   debounce timer.
+4. Main process updates the in-memory `Map<windowId, ShellLayout>` for
+   each response and writes the composite layout once after all responses
+   arrive (or 2s timeout — if a window is unresponsive, its last
+   debounced save in the map is the fallback).
 5. `wm.closeAll()` → `server.killServer()` → `app.exit(0)`.
 
 The `layout:flush` handler in the frontend calls the same serialization
 path as the debounced auto-save — no separate code path, just immediate
-invocation.
+invocation via `layout:window-save`.
 
 ### Restore Sequence on Startup
 
@@ -521,20 +569,31 @@ invocation.
      switches to Dashboard panel to scan a workspace root.
 4. Electron loads `PersistedLayout`, `PersistedGroups`, and `PersistedKeymap`
    from their respective `LayoutStore` keys for the workspace path.
-5. For each `ShellLayout` in the layout: create BrowserWindow with saved
+5. **Cross-window terminal deduplication:** Before creating windows,
+   scan all `ShellLayout` entries for `terminalName` values that appear
+   in more than one window. For each duplicate, keep the reference in
+   the `ShellLayout` whose `lastActiveFrameId` points to a frame
+   containing that terminal (i.e., the window where it was last active),
+   and remove the `TabRef` from all other windows. If no
+   `lastActiveFrameId` match exists, keep the reference in the first
+   `ShellLayout` entry. Frames left with zero tabs after deduplication
+   are removed. This prevents the connection ping-pong scenario where
+   multiple windows compete for the same backend session on restore.
+6. For each `ShellLayout` in the layout: create BrowserWindow with saved
    bounds, **clamped to available display area** (see below).
-6. Frontend creates Dockview floating groups matching `FrameLayout` positions,
+7. Frontend creates Dockview floating groups matching `FrameLayout` positions,
    ordered by `order` field.
-7. For each tab: look up `terminalName` in `TerminalRegistry`.
+8. For each tab: look up `terminalName` in `TerminalRegistry`.
    - Found → connect WebSocket, attach renderer per tier rules (§3).
    - Not found → show "Disconnected" state with reconnect/restart button.
    As defence in depth, WebSocket connection uses retry with exponential
    backoff (100ms, 200ms, 400ms, up to 3 retries) before showing
    "Disconnected" — handles any residual race after readiness gating.
-8. Focus the frame and tab identified by `ShellLayout.lastActiveFrameId` and
+   Retry is skipped for close code `4001` (session takeover) — see §3.
+9. Focus the frame and tab identified by `ShellLayout.lastActiveFrameId` and
    `FrameLayout.activeTabIndex`.
 
-**Display bounds validation (step 5):** During restore, all
+**Display bounds validation (step 6):** During restore, all
 `ShellLayout.bounds` and `FrameLayout.position` are validated against
 `screen.getAllDisplays()`. For each `ShellLayout`, if its saved bounds
 don't intersect any current display, the window is repositioned to the
@@ -587,7 +646,8 @@ pinned ones.
 
 - `Cmd+Shift+D` or click detach button (⎋).
 - Source window serializes the frame's `FrameLayout` (tabs, active tab,
-  position, size, groupId, order).
+  position, size, groupId, order) and sends to main process.
+- Main process sets save-inhibit flag (§6 Layout Save Coordination).
 - Electron main process creates a new BrowserWindow via `window:create` IPC,
   sized to the frame.
 - Frame state is sent to the new window via
@@ -596,6 +656,8 @@ pinned ones.
 - The new window's `trellis-workspace-view` listens for `frame:init` and
   creates a Dockview floating group from the received `FrameLayout`.
 - Original frame's Dockview group is removed from the source window.
+  Source confirms removal to main process, which clears the save-inhibit
+  flag and flushes deferred saves (see §6 Layout Save Coordination).
 - Both windows persist independently as `ShellLayout` entries.
 
 ### Reattach
@@ -605,7 +667,9 @@ pinned ones.
 - Sends to main process via `trellis.sendFrameToWindow(targetWindowId, frameLayout)`.
 - Main process forwards to target window via
   `webContents.send('frame:receive', frameLayout)`.
-- Target window's `trellis-workspace-view` creates a Dockview floating group.
+- Target window's `trellis-workspace-view` creates a Dockview floating group
+  with `order = max(existing orders in target window) + 1`, replacing the
+  serialized order value. This prevents order collisions with existing frames.
 - Source window's Dockview group is removed; window closes if last frame.
 - Race safety: `frame:receive` handler is idempotent (uses frame ID to
   deduplicate). If the source window closes before the target reconstructs,
