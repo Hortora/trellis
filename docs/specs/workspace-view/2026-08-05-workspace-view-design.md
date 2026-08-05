@@ -187,6 +187,33 @@ to `trellis-workspace-view`.
   (1, 2, ..., N within each tier) preserving relative order. Prevents
   unbounded growth across sessions.
 
+### Tab Uniqueness
+
+Each `terminalName` may appear in at most one tab across all frames within
+a BrowserWindow. `trellis-workspace-view` maintains a `Set<string>` of
+active terminal names.
+
+- **On tab add (`Cmd+T`):** The repo/slot picker excludes terminals already
+  open. If a terminal is already open (e.g., via group open that includes a
+  terminal already present), the existing tab is focused instead of creating
+  a duplicate.
+- **On group open (`Cmd+N`):** Tabs in the group that reference already-open
+  terminals are skipped; the frame opens with only the non-duplicate tabs.
+  If all tabs are duplicates, no frame is created.
+
+This prevents the pipe-pane takeover problem described in §3 (Connection
+Persistence): tmux `pipe-pane` redirects output to a single FIFO, so a
+second WebSocket connection for the same session would steal the output
+stream from the first, leaving the original tab silent.
+
+**Cross-window:** Tab uniqueness is enforced per window, not globally. If
+a terminal is open in window A and a user opens it in window B, the backend's
+one-connection-per-session enforcement (§3) causes window B's connection to
+take over the pipe-pane. Window A's tab transitions to a "Connection moved
+to another window" state with a "Reconnect" button. This is acceptable for
+MVP — full cross-window terminal sharing requires backend multicast
+(out of scope).
+
 ### Frame Chrome
 
 Each frame has a thin title bar:
@@ -625,7 +652,9 @@ panel container. This is intentional:
 
 ## §9 Backend Changes
 
-### No New Endpoints
+### Endpoints
+
+Existing endpoints consumed (no changes):
 
 | Data needed | Existing source |
 |-------------|----------------|
@@ -636,6 +665,12 @@ panel container. This is intentional:
 | Agent state changes | SSE `agent:state` via `/api/push` |
 | Eviction candidates | SSE `agent:eviction` via `/api/push` |
 | Workspace changes | SSE `workspace:repos`, `workspace:slots` via `/api/push` |
+
+New endpoint:
+
+| Data needed | New source |
+|-------------|-----------|
+| Sidecar readiness (bootstrap complete) | `GET /api/health/ready` — returns 200 after `TerminalRegistry.bootstrap()` completes; 503 before. See §6 Restore Sequence step 2. |
 
 ### Terminal Auto-Creation
 
