@@ -155,7 +155,9 @@ to `trellis-workspace-view`.
 - Disable Dockview's built-in snap/dock behaviour for dock targets; keep
   tab-level drag within/between groups enabled.
 - Each Dockview group = one frame. Each panel within a group = one tab.
-- `onDidLayoutChange` triggers persistence saves (debounced at 1 second).
+- `onDidLayoutChange` triggers persistence saves (debounced at 1s with a
+  5s max-wait — a save fires at least every 5 seconds regardless of event
+  frequency, preventing starvation under continuous layout changes).
 
 ### Drag / Resize
 
@@ -171,9 +173,16 @@ to `trellis-workspace-view`.
 ### Z-Order
 
 - Flat sibling structure with `isolation: isolate` on parent container.
-- Click anywhere in a frame → `z-index = ++maxZ`.
-- Two z-tiers: normal (0–9999) and pinned (10000+). Pinned frames always
-  render above normal frames.
+- Separate z-counters per tier: `normalMaxZ` (starts at 1) and
+  `pinnedMaxZ` (starts at 1).
+- Click anywhere in a normal frame → `z-index = ++normalMaxZ`.
+- Click anywhere in a pinned frame → `z-index = 10000 + ++pinnedMaxZ`.
+- **Compaction:** When either counter exceeds 5000, compact that tier —
+  reassign z-indices 1..N (normal) or 10001..10000+N (pinned) preserving
+  relative order, reset the counter to N. Compaction runs synchronously
+  on the triggering click; ordering is never stale.
+- **Invariant:** Normal frame z-indices stay in [1, 9999]. Pinned frame
+  z-indices stay in [10001, 20000]. Tiers never collide.
 - On persistence save: z-indices are normalized to sequential integers
   (1, 2, ..., N within each tier) preserving relative order. Prevents
   unbounded growth across sessions.
@@ -225,11 +234,10 @@ lastFocusedAt}` entries to determine demotion order across windows.
 
 ### Ownership
 
-`trellis-workspace-view` owns renderer lifecycle. It listens to Dockview's
-panel visibility and focus events and drives all promote/demote/dispose
-transitions. Each BrowserWindow runs its own `trellis-workspace-view` with
-its own WebGL context budget (16 per window) — no cross-window coordination
-is needed for renderer management.
+`trellis-workspace-view` owns renderer lifecycle within its window. It
+listens to Dockview's panel visibility and focus events and drives all
+promote/demote/dispose transitions locally. Cross-window context budget
+coordination is handled via the IPC protocol described above.
 
 ### Terminal vs Renderer Lifetime
 
@@ -388,7 +396,8 @@ own key, scoped by workspace path:
 1. **Groups** (`groups.{workspacePath}`) — saved on explicit user action
    (save/update group). Never written by layout auto-save.
 2. **Layout** (`layout.{workspacePath}`) — saved on every layout change,
-   debounced at 1 second. Contains `{ windows: ShellLayout[] }`.
+   debounced at 1s with 5s max-wait (see §2). Contains
+   `{ windows: ShellLayout[] }`.
 3. **Keymap** (`keymap.{workspacePath}`) — saved on user keymap change.
 
 Separate keys ensure that frequent layout saves cannot corrupt group data
