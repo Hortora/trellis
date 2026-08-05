@@ -73,7 +73,10 @@ public class WorkspaceScanner {
             for (Path slotDir : stream) {
                 if (!Files.isDirectory(slotDir)) continue;
                 String dirName = slotDir.getFileName().toString();
-                if ("attic".equals(dirName)) continue;
+                if ("attic".equals(dirName)) {
+                    scanAttic(slotDir, slots);
+                    continue;
+                }
 
                 int number;
                 try {
@@ -96,6 +99,33 @@ public class WorkspaceScanner {
             LOG.warnf(e, "Failed to scan slots under %s", slotsDir);
         }
         return slots;
+    }
+
+    private void scanAttic(Path atticDir, List<SlotInfo> slots) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(atticDir)) {
+            for (Path slotDir : stream) {
+                if (!Files.isDirectory(slotDir)) continue;
+                int number;
+                try {
+                    number = Integer.parseInt(slotDir.getFileName().toString());
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                Path slotFile = slotDir.resolve(".slot");
+                if (!Files.isRegularFile(slotFile)) continue;
+                try {
+                    SlotInfo info = parseSlotFile(slotFile, slotDir, number);
+                    if (info != null) {
+                        slots.add(new SlotInfo(info.number(), info.path(), info.issue(),
+                                SlotStatus.ARCHIVED, info.isEpic(), info.repos()));
+                    }
+                } catch (Exception e) {
+                    LOG.warnf(e, "Skipping corrupted attic slot: %s", slotFile);
+                }
+            }
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to scan attic slots under %s", atticDir);
+        }
     }
 
     private void scanWorkspaces(Path root, List<PauseEntry> pauses, List<EpicInfo> epics) {

@@ -79,13 +79,45 @@ class WorkspaceScannerTest {
     }
 
     @Test
-    void scanSkipsAtticDirectory() throws IOException {
-        createRepo("engine");
-        Files.createDirectories(root.resolve("worktrees/attic/1/engine/.git"));
+    void scanFindsArchivedSlotsInAttic() throws IOException {
+        createSlot(6, """
+                # Slot 6
+
+                ## Issue
+                org/repo#14
+
+                ## Repos
+                - engine
+                """);
+        createArchivedSlot(3, """
+                # Slot 3
+
+                ## Issue
+                org/repo#9
+
+                ## Repos
+                - pages
+                """);
+        createArchivedSlot(5, """
+                # Slot 5
+
+                ## Issue
+                org/repo#11
+
+                ## Repos
+                - ledger
+                """);
 
         var model = scanner.scan(root);
 
-        assertEquals(1, model.repos().size());
+        assertEquals(3, model.slots().size());
+        var active = model.slots().stream().filter(s -> s.status() == SlotStatus.ACTIVE).toList();
+        var archived = model.slots().stream().filter(s -> s.status() == SlotStatus.ARCHIVED).toList();
+        assertEquals(1, active.size());
+        assertEquals(2, archived.size());
+        assertEquals(6, active.getFirst().number());
+        var archivedNumbers = archived.stream().map(SlotInfo::number).sorted().toList();
+        assertEquals(List.of(3, 5), archivedNumbers);
     }
 
     // --- Slot discovery ---
@@ -128,7 +160,7 @@ class WorkspaceScannerTest {
                 - blocks-ui (primary)
                 - chat-app
                 """);
-        Files.createFile(root.resolve("worktrees/45/.phase-a-complete"));
+        Files.createFile(root.resolve("slots/45/.phase-a-complete"));
 
         var model = scanner.scan(root);
 
@@ -139,7 +171,7 @@ class WorkspaceScannerTest {
 
     @Test
     void scanSkipsSlotDirectoriesWithoutSlotFile() throws IOException {
-        Files.createDirectories(root.resolve("worktrees/99"));
+        Files.createDirectories(root.resolve("slots/99"));
 
         var model = scanner.scan(root);
 
@@ -326,13 +358,19 @@ class WorkspaceScannerTest {
     }
 
     private void createSlot(int number, String slotContent) throws IOException {
-        var slotDir = root.resolve("worktrees/" + number);
+        var slotDir = root.resolve("slots/" + number);
+        Files.createDirectories(slotDir);
+        Files.writeString(slotDir.resolve(".slot"), slotContent);
+    }
+
+    private void createArchivedSlot(int number, String slotContent) throws IOException {
+        var slotDir = root.resolve("slots/attic/" + number);
         Files.createDirectories(slotDir);
         Files.writeString(slotDir.resolve(".slot"), slotContent);
     }
 
     private Path createSlotWorkspace(int slotNumber) throws IOException {
-        var workDir = root.resolve("worktrees/" + slotNumber + "/work");
+        var workDir = root.resolve("slots/" + slotNumber + "/work");
         Files.createDirectories(workDir.resolve("design"));
         return workDir;
     }

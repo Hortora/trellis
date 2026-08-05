@@ -1,6 +1,51 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { DockviewComponent, DockviewGroupPanel } from 'dockview-core';
+import { DockviewComponent, DockviewGroupPanel, themeDark } from 'dockview-core';
+import dockviewCSS from 'dockview-core/dist/styles/dockview.css?raw';
+import xtermCSS from '@xterm/xterm/css/xterm.css?raw';
+
+const MIN_DELTA = 30;
+const ANGLES = 12;
+
+export function nextFramePosition(
+  container: { width: number; height: number },
+  frameSize: { width: number; height: number },
+  existing: { x: number; y: number }[],
+  displacement = 40,
+): { x: number; y: number } {
+  const maxX = Math.max(0, container.width - frameSize.width);
+  const maxY = Math.max(0, container.height - frameSize.height);
+
+  if (existing.length === 0) {
+    return { x: Math.round(maxX / 2), y: Math.round(maxY / 2) };
+  }
+
+  let globalBest: { x: number; y: number } | null = null;
+  let globalBestMinDist = -1;
+
+  for (const anchor of existing) {
+    for (let d = displacement; d <= Math.max(maxX, maxY) + displacement; d += displacement) {
+      for (let i = 0; i < ANGLES; i++) {
+        const angle = (i * Math.PI * 2) / ANGLES;
+        const x = Math.max(0, Math.min(maxX, Math.round(anchor.x + d * Math.cos(angle))));
+        const y = Math.max(0, Math.min(maxY, Math.round(anchor.y + d * Math.sin(angle))));
+
+        const minDist = existing.reduce(
+          (min, f) => Math.min(min, Math.hypot(x - f.x, y - f.y)), Infinity,
+        );
+
+        if (minDist >= MIN_DELTA) return { x, y };
+
+        if (minDist > globalBestMinDist) {
+          globalBestMinDist = minDist;
+          globalBest = { x, y };
+        }
+      }
+    }
+  }
+
+  return globalBest ?? { x: Math.round(maxX / 2), y: Math.round(maxY / 2) };
+}
 
 interface TabRef {
   terminalName: string;
@@ -42,6 +87,11 @@ export class TrellisWorkspaceView extends LitElement {
   private _container: HTMLDivElement | null = null;
   private _activeTerminals = new Set<string>();
   private _frameOrders = new Map<string, number>();
+  private _hiddenFrames = new Map<string, { tabs: TabRef[]; groupId?: string }>();
+  private _frameTabs = new Map<string, TabRef[]>();
+  private _frameGroups = new Map<string, any>();
+  private _groupToFrame = new Map<any, string>();
+  private _framePositions = new Map<string, { x: number; y: number }>();
   private _nextOrder = 1;
   private _normalMaxZ = 1;
   private _pinnedMaxZ = 1;
@@ -51,16 +101,65 @@ export class TrellisWorkspaceView extends LitElement {
   private _saveMaxWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private _lastSaveTime = 0;
 
-  static override styles = css`
-    :host { display: block; width: 100%; height: 100%; background: #1e1e1e; color: #ccc; position: relative; overflow: hidden; }
-    .dockview-container { width: 100%; height: 100%; }
-  `;
+  static override styles = [
+    unsafeCSS(dockviewCSS),
+    unsafeCSS(xtermCSS),
+    css`
+      :host { display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e; color: #ccc; position: relative; overflow: hidden; }
+      .workspace-toolbar { display: flex; align-items: center; height: 32px; padding: 0 8px; background: #252526; border-bottom: 1px solid #333; flex-shrink: 0; }
+      .new-frame-btn, .frames-btn { background: transparent; border: 1px solid #555; color: #ccc; padding: 2px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-right: 6px; }
+      .new-frame-btn:hover, .frames-btn:hover { background: #333; }
+      .frames-section-header { padding: 6px 12px 2px; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+      .frames-row { display: flex; align-items: center; gap: 6px; padding: 4px 12px; }
+      .frames-row-hidden { opacity: 0.6; }
+      .frames-label { flex: 1; color: #ccc; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .frames-action { background: transparent; border: 1px solid #555; color: #ccc; padding: 1px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; }
+      .frames-action:hover { background: #333; }
+      .frames-action-delete { border-color: #733; color: #c88; }
+      .frames-action-delete:hover { background: #422; }
+      .dockview-container { flex: 1; }
+      .picker-backdrop { position: absolute; inset: 0; z-index: 9999; }
+      .workspace-picker { position: absolute; z-index: 10000; min-width: 280px; max-height: 420px; display: flex; flex-direction: column; background: #252526; border: 1px solid #555; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 13px; }
+      .picker-tab-bar { display: flex; border-bottom: 1px solid #333; flex-shrink: 0; }
+      .picker-tab { flex: 1; background: transparent; border: none; color: #888; padding: 6px 0; cursor: pointer; font-size: 12px; border-bottom: 2px solid transparent; }
+      .picker-tab:hover { color: #ccc; }
+      .picker-tab-active { color: #ccc; border-bottom-color: #3b82f6; }
+      .picker-selected { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid #333; flex-shrink: 0; }
+      .selected-chip { display: inline-flex; align-items: center; gap: 4px; background: #0e639c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+      .selected-chip-remove { background: none; border: none; color: #fff; cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0.7; }
+      .selected-chip-remove:hover { opacity: 1; }
+      .picker-scroll { flex: 1; overflow-y: auto; }
+      .picker-section { padding: 4px 0; }
+      .picker-empty { padding: 12px; color: #666; text-align: center; font-size: 12px; }
+      .picker-item { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; }
+      .picker-item:hover { background: #333; }
+      .picker-item-disabled { opacity: 0.4; cursor: default; }
+      .picker-item-disabled:hover { background: transparent; }
+      .picker-name { flex: 1; color: #ccc; }
+      .picker-branch { color: #666; font-size: 11px; }
+      .picker-actions { display: flex; justify-content: flex-end; padding: 8px 12px 4px; }
+      .picker-confirm { background: #0e639c; border: none; color: #fff; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+      .picker-confirm:hover { background: #1177bb; }
+      .picker-confirm:disabled { opacity: 0.4; cursor: default; }
+      .frame-close-dot { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; border: none; cursor: pointer; margin: 0 8px 0 4px; padding: 0; flex-shrink: 0; }
+      .frame-close-dot:hover { background: #ff3b30; }
+      .dv-floating-titlebar { display: flex; align-items: center; }
+      .frame-add-tab-btn { background: transparent; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 0 6px; line-height: 1; }
+      .frame-add-tab-btn:hover { color: #ccc; }
+      .xterm { padding: 4px; }
+      .xterm-viewport, .xterm-screen { background-color: #1e1e1e !important; }
+      .dv-resize-container { border-radius: 10px; background: #1e1e1e; }
+      .dv-groupview { border-radius: 10px; background: #1e1e1e; overflow: hidden; }
+      .dv-groupview .dv-tabs-and-actions-container { border-top-left-radius: 10px; border-top-right-radius: 10px; }
+      .dv-groupview .dv-content-container { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; background: #1e1e1e; }
+      .dv-render-overlay { background: #1e1e1e; border-radius: 10px; overflow: hidden; }
+    `,
+  ];
 
   private _keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   override firstUpdated() {
     this._container = this.shadowRoot!.querySelector('.dockview-container') as HTMLDivElement;
-    this._injectDockviewCSS();
     this._initDockview();
     this._setupFlushHandler();
     this._setupKeyboard();
@@ -156,7 +255,10 @@ export class TrellisWorkspaceView extends LitElement {
     // Full implementation requires frame position tracking from Dockview
   }
 
-  private _onNewFrame() { /* TODO: show group picker */ }
+  private _onNewFrame() {
+    const btn = this.shadowRoot!.querySelector('.new-frame-btn') as HTMLElement;
+    if (btn) this._showPicker(btn, 'create');
+  }
   private _onNewTab() { /* TODO: show repo/slot picker */ }
   private _onCloseTab() { /* TODO: close active tab in focused frame */ }
   private _showOrganiserPicker() { /* TODO: show preset picker */ }
@@ -164,27 +266,270 @@ export class TrellisWorkspaceView extends LitElement {
   private _detachFrame() { /* TODO: detach focused frame to new window */ }
 
   private _terminalElements = new Map<string, HTMLElement>();
-  private _cssInjected = false;
+  private _pickerEl: HTMLElement | null = null;
+  private _backdropEl: HTMLElement | null = null;
+  private _pickerDismissEscape: ((e: KeyboardEvent) => void) | null = null;
 
-  private _injectDockviewCSS() {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdn.jsdelivr.net/npm/dockview-core@7.0.4/dist/styles/dockview.css';
-    this.shadowRoot!.appendChild(link);
+  private async _showPicker(anchor: HTMLElement, mode: 'create' | 'add', group?: any) {
+    this._dismissPicker();
+    const workspace = await this._fetchWorkspace();
+    const repos = workspace.repos;
+    const activeSlots = workspace.slots.filter((s: any) => s.status !== 'ARCHIVED');
+    const archivedSlots = workspace.slots.filter((s: any) => s.status === 'ARCHIVED');
+
+    const picker = document.createElement('div');
+    picker.className = 'workspace-picker';
+    const anchorRect = anchor.getBoundingClientRect();
+    const hostRect = this.getBoundingClientRect();
+    picker.style.left = `${anchorRect.left - hostRect.left}px`;
+    picker.style.top = `${anchorRect.bottom - hostRect.top + 4}px`;
+
+    const selected = new Map<string, string>();
+    let confirmBtn!: HTMLButtonElement;
+    let selectedArea!: HTMLElement;
+
+    const updateSelectedArea = () => {
+      selectedArea.innerHTML = '';
+      for (const [termName, type] of selected) {
+        const chip = document.createElement('span');
+        chip.className = 'selected-chip';
+        const label = termName.replace(/^(repo-|slot-)/, '');
+        chip.textContent = `${label} (${type})`;
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'selected-chip-remove';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          selected.delete(termName);
+          const cb = picker.querySelector(`input[data-term="${termName}"]`) as HTMLInputElement;
+          if (cb) cb.checked = false;
+          updateSelectedArea();
+          confirmBtn.disabled = selected.size === 0;
+        });
+        chip.appendChild(removeBtn);
+        selectedArea.appendChild(chip);
+      }
+      selectedArea.style.display = selected.size > 0 ? '' : 'none';
+      confirmBtn.disabled = selected.size === 0;
+    };
+
+    // Tab bar
+    const tabBar = document.createElement('div');
+    tabBar.className = 'picker-tab-bar';
+    const tabNames = ['Repos', 'Slots', 'Attic'];
+    const sections: HTMLElement[] = [];
+    for (const name of tabNames) {
+      const tab = document.createElement('button');
+      tab.className = 'picker-tab';
+      tab.textContent = name;
+      if (name === 'Repos') tab.classList.add('picker-tab-active');
+      tab.addEventListener('click', () => {
+        tabBar.querySelectorAll('.picker-tab').forEach(t => t.classList.remove('picker-tab-active'));
+        tab.classList.add('picker-tab-active');
+        sections.forEach(s => s.style.display = s.dataset.section === name.toLowerCase() ? '' : 'none');
+      });
+      tabBar.appendChild(tab);
+    }
+    picker.appendChild(tabBar);
+
+    // Selected area (fixed, spans all tabs)
+    selectedArea = document.createElement('div');
+    selectedArea.className = 'picker-selected';
+    selectedArea.style.display = 'none';
+    picker.appendChild(selectedArea);
+
+    // Scrollable content wrapper
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'picker-scroll';
+
+    const makeItem = (termName: string, displayName: string, type: string, branch?: string) => {
+      const isOpen = this._activeTerminals.has(termName);
+      const item = document.createElement('label');
+      item.className = `picker-item${isOpen ? ' picker-item-disabled' : ''}`;
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.disabled = isOpen;
+      cb.dataset.term = termName;
+      cb.addEventListener('change', () => {
+        if (cb.checked) selected.set(termName, type); else selected.delete(termName);
+        updateSelectedArea();
+      });
+      const nameEl = document.createElement('span');
+      nameEl.className = 'picker-name';
+      nameEl.textContent = displayName;
+      item.appendChild(cb);
+      item.appendChild(nameEl);
+      if (branch) {
+        const branchEl = document.createElement('span');
+        branchEl.className = 'picker-branch';
+        branchEl.textContent = branch;
+        item.appendChild(branchEl);
+      }
+      return item;
+    };
+
+    // Repos section
+    const reposSection = document.createElement('div');
+    reposSection.className = 'picker-section';
+    reposSection.dataset.section = 'repos';
+    for (const repo of repos) {
+      reposSection.appendChild(makeItem(`repo-${repo.name}`, repo.name, 'repo', repo.branch));
+    }
+    scrollArea.appendChild(reposSection);
+    sections.push(reposSection);
+
+    // Slots section (ACTIVE / READY_TO_LAND)
+    const slotsSection = document.createElement('div');
+    slotsSection.className = 'picker-section';
+    slotsSection.dataset.section = 'slots';
+    slotsSection.style.display = 'none';
+    for (const slot of activeSlots) {
+      const termName = `slot-${slot.number}`;
+      const label = `slot-${slot.number}`;
+      slotsSection.appendChild(makeItem(termName, label, 'slot', slot.issue));
+    }
+    if (activeSlots.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'picker-empty';
+      empty.textContent = 'No active slots';
+      slotsSection.appendChild(empty);
+    }
+    scrollArea.appendChild(slotsSection);
+    sections.push(slotsSection);
+
+    // Attic section (ARCHIVED)
+    const atticSection = document.createElement('div');
+    atticSection.className = 'picker-section';
+    atticSection.dataset.section = 'attic';
+    atticSection.style.display = 'none';
+    for (const slot of archivedSlots) {
+      const termName = `slot-${slot.number}`;
+      const label = `slot-${slot.number}`;
+      atticSection.appendChild(makeItem(termName, label, 'attic', slot.issue));
+    }
+    if (archivedSlots.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'picker-empty';
+      empty.textContent = 'No archived slots';
+      atticSection.appendChild(empty);
+    }
+    scrollArea.appendChild(atticSection);
+    sections.push(atticSection);
+
+    picker.appendChild(scrollArea);
+
+    // Action bar (fixed at bottom)
+    const actions = document.createElement('div');
+    actions.className = 'picker-actions';
+    confirmBtn = document.createElement('button');
+    confirmBtn.className = 'picker-confirm';
+    confirmBtn.textContent = mode === 'create' ? 'Create Frame' : 'Add';
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener('click', () => {
+      const tabs: TabRef[] = [...selected.keys()].map(n => ({
+        terminalName: n,
+        type: (n.startsWith('slot-') ? 'slot' : 'repo') as 'repo' | 'slot',
+      }));
+      if (mode === 'create') {
+        this.createFrame(tabs);
+      } else if (group && this._dockview) {
+        for (const tab of tabs) {
+          if (this._activeTerminals.has(tab.terminalName)) continue;
+          this._activeTerminals.add(tab.terminalName);
+          this._dockview.addPanel({
+            id: tab.terminalName,
+            title: tab.terminalName.replace(/^(repo-|slot-)/, ''),
+            component: 'terminal',
+            position: { referenceGroup: group },
+          });
+        }
+      }
+      this._dismissPicker();
+    });
+    actions.appendChild(confirmBtn);
+    picker.appendChild(actions);
+
+    // Backdrop
+    const backdrop = document.createElement('div');
+    backdrop.className = 'picker-backdrop';
+    backdrop.addEventListener('click', () => this._dismissPicker());
+
+    this._backdropEl = backdrop;
+    this._pickerEl = picker;
+    this.shadowRoot!.appendChild(backdrop);
+    this.shadowRoot!.appendChild(picker);
+
+    this._pickerDismissEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') this._dismissPicker();
+    };
+    document.addEventListener('keydown', this._pickerDismissEscape);
+  }
+
+  private _dismissPicker() {
+    if (this._pickerDismissEscape) {
+      document.removeEventListener('keydown', this._pickerDismissEscape);
+      this._pickerDismissEscape = null;
+    }
+    if (this._backdropEl) {
+      this._backdropEl.remove();
+      this._backdropEl = null;
+    }
+    if (this._pickerEl) {
+      this._pickerEl.remove();
+      this._pickerEl = null;
+    }
+  }
+
+  private _injectCloseDot(group: any, frameId: string) {
+    const el = group.element ?? group.header?.element;
+    if (!el) return;
+    const tryInject = () => {
+      const titlebar = el.closest('.dv-resize-container')?.querySelector('.dv-floating-titlebar');
+      if (!titlebar) return false;
+      if (titlebar.querySelector('.frame-close-dot')) return true;
+      const dot = document.createElement('button');
+      dot.className = 'frame-close-dot';
+      dot.title = 'Hide frame';
+      dot.addEventListener('pointerdown', (e) => e.stopPropagation());
+      dot.addEventListener('mousedown', (e) => e.stopPropagation());
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.hideFrame(frameId);
+      });
+      titlebar.prepend(dot);
+      return true;
+    };
+    if (!tryInject()) {
+      requestAnimationFrame(() => tryInject());
+    }
+  }
+
+  private async _fetchWorkspace(): Promise<{ repos: any[]; slots: any[] }> {
+    if (!this.workspaceRoot) return { repos: [], slots: [] };
+    try {
+      const resp = await fetch(`/api/workspace?root=${encodeURIComponent(this.workspaceRoot)}`);
+      if (!resp.ok) return { repos: [], slots: [] };
+      const data = await resp.json();
+      return { repos: data.repos || [], slots: data.slots || [] };
+    } catch { return { repos: [], slots: [] }; }
   }
 
   private _initDockview() {
     if (!this._container) return;
 
-    if (!this._cssInjected) {
-      const xtermLink = document.createElement('link');
-      xtermLink.rel = 'stylesheet';
-      xtermLink.href = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css';
-      this.shadowRoot!.appendChild(xtermLink);
-      this._cssInjected = true;
-    }
-
     this._dockview = new DockviewComponent(this._container, {
+      theme: themeDark,
+      floatingGroupDragHandle: 'titlebar' as const,
+      createRightHeaderActionComponent: (group: any) => {
+        const btn = document.createElement('button');
+        btn.className = 'frame-add-tab-btn';
+        btn.textContent = '+';
+        btn.title = 'Add tab';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._showPicker(btn, 'add', group);
+        });
+        return { element: btn, init() {}, dispose() {} };
+      },
       createComponent: (options) => {
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;';
@@ -288,14 +633,27 @@ export class TrellisWorkspaceView extends LitElement {
       this._activeTerminals.add(tab.terminalName);
     }
 
+    const containerRect = this._container?.getBoundingClientRect() ?? { width: 1200, height: 800 };
+    const fWidth = 600;
+    const fHeight = 400;
+    const pos = nextFramePosition(
+      { width: containerRect.width, height: containerRect.height },
+      { width: fWidth, height: fHeight },
+      [...this._framePositions.values()],
+    );
+    this._framePositions.set(frameId, pos);
+
     const firstTab = validTabs[0];
     const panel = this._dockview.addPanel({
       id: firstTab.terminalName,
       title: firstTab.terminalName.replace(/^(repo-|slot-)/, ''),
       component: 'terminal',
-      floating: { width: 600, height: 400 },
+      floating: { width: fWidth, height: fHeight, x: pos.x, y: pos.y },
     });
     const group = panel.group;
+    this._frameGroups.set(frameId, group);
+    this._groupToFrame.set(group, frameId);
+    this._injectCloseDot(group, frameId);
     for (let i = 1; i < validTabs.length; i++) {
       this._dockview.addPanel({
         id: validTabs[i].terminalName,
@@ -305,16 +663,55 @@ export class TrellisWorkspaceView extends LitElement {
       });
     }
 
+    this._frameTabs.set(frameId, [...validTabs]);
     this._focusedFrameId = frameId;
     this._scheduleSave();
     return frameId;
   }
 
-  removeFrame(frameId: string) {
+  hideFrame(frameId: string) {
+    const tabs = this._frameTabs.get(frameId);
+    if (!tabs) return;
+    this._hiddenFrames.set(frameId, { tabs: [...tabs] });
+    const group = this._frameGroups.get(frameId);
+    if (group && this._dockview) {
+      this._groupToFrame.delete(group);
+      this._frameGroups.delete(frameId);
+      try { this._dockview.removeGroup(group); } catch { /* already removed */ }
+    }
+    for (const tab of tabs) {
+      this._activeTerminals.delete(tab.terminalName);
+    }
+    this._frameTabs.delete(frameId);
+    this._framePositions.delete(frameId);
     this._frameOrders.delete(frameId);
     this._pinnedFrames.delete(frameId);
     if (this._focusedFrameId === frameId) this._focusedFrameId = null;
     this._scheduleSave();
+  }
+
+  showFrame(frameId: string) {
+    const hidden = this._hiddenFrames.get(frameId);
+    if (!hidden) return;
+    this._hiddenFrames.delete(frameId);
+    this.createFrame(hidden.tabs, hidden.groupId);
+  }
+
+  deleteFrame(frameId: string) {
+    const hidden = this._hiddenFrames.get(frameId);
+    if (hidden) {
+      this._hiddenFrames.delete(frameId);
+    }
+    this._frameTabs.delete(frameId);
+    this._framePositions.delete(frameId);
+    this._frameOrders.delete(frameId);
+    this._pinnedFrames.delete(frameId);
+    if (this._focusedFrameId === frameId) this._focusedFrameId = null;
+    this._scheduleSave();
+  }
+
+  removeFrame(frameId: string) {
+    this.hideFrame(frameId);
   }
 
   togglePin(frameId: string) {
@@ -458,7 +855,107 @@ export class TrellisWorkspaceView extends LitElement {
     return data?.groups || [];
   }
 
+  private _showFramesList() {
+    this._dismissPicker();
+    const btn = this.shadowRoot!.querySelector('.frames-btn') as HTMLElement;
+    if (!btn) return;
+
+    const picker = document.createElement('div');
+    picker.className = 'workspace-picker';
+    const anchorRect = btn.getBoundingClientRect();
+    const hostRect = this.getBoundingClientRect();
+    picker.style.left = `${anchorRect.left - hostRect.left}px`;
+    picker.style.top = `${anchorRect.bottom - hostRect.top + 4}px`;
+
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'picker-scroll';
+
+    const visibleFrames = [...this._frameTabs.entries()];
+    const hiddenFrames = [...this._hiddenFrames.entries()];
+
+    if (visibleFrames.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'frames-section-header';
+      header.textContent = 'Visible';
+      scrollArea.appendChild(header);
+      for (const [frameId, tabs] of visibleFrames) {
+        const row = document.createElement('div');
+        row.className = 'frames-row';
+        const label = document.createElement('span');
+        label.className = 'frames-label';
+        label.textContent = tabs.map(t => t.terminalName.replace(/^(repo-|slot-)/, '')).join(', ');
+        const hideBtn = document.createElement('button');
+        hideBtn.className = 'frames-action';
+        hideBtn.textContent = 'Hide';
+        hideBtn.addEventListener('click', () => { this.hideFrame(frameId); this._dismissPicker(); });
+        const delBtn = document.createElement('button');
+        delBtn.className = 'frames-action frames-action-delete';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', () => { this.hideFrame(frameId); this.deleteFrame(frameId); this._dismissPicker(); });
+        row.appendChild(label);
+        row.appendChild(hideBtn);
+        row.appendChild(delBtn);
+        scrollArea.appendChild(row);
+      }
+    }
+
+    if (hiddenFrames.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'frames-section-header';
+      header.textContent = 'Hidden';
+      scrollArea.appendChild(header);
+      for (const [frameId, data] of hiddenFrames) {
+        const row = document.createElement('div');
+        row.className = 'frames-row frames-row-hidden';
+        const label = document.createElement('span');
+        label.className = 'frames-label';
+        label.textContent = data.tabs.map(t => t.terminalName.replace(/^(repo-|slot-)/, '')).join(', ');
+        const showBtn = document.createElement('button');
+        showBtn.className = 'frames-action';
+        showBtn.textContent = 'Show';
+        showBtn.addEventListener('click', () => { this.showFrame(frameId); this._dismissPicker(); });
+        const delBtn = document.createElement('button');
+        delBtn.className = 'frames-action frames-action-delete';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', () => { this.deleteFrame(frameId); this._dismissPicker(); });
+        row.appendChild(label);
+        row.appendChild(showBtn);
+        row.appendChild(delBtn);
+        scrollArea.appendChild(row);
+      }
+    }
+
+    if (visibleFrames.length === 0 && hiddenFrames.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'picker-empty';
+      empty.textContent = 'No frames';
+      scrollArea.appendChild(empty);
+    }
+
+    picker.appendChild(scrollArea);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'picker-backdrop';
+    backdrop.addEventListener('click', () => this._dismissPicker());
+
+    this._backdropEl = backdrop;
+    this._pickerEl = picker;
+    this.shadowRoot!.appendChild(backdrop);
+    this.shadowRoot!.appendChild(picker);
+
+    this._pickerDismissEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') this._dismissPicker();
+    };
+    document.addEventListener('keydown', this._pickerDismissEscape);
+  }
+
   override render() {
-    return html`<div class="dockview-container"></div>`;
+    return html`
+      <div class="workspace-toolbar">
+        <button class="new-frame-btn" @click=${this._onNewFrame}>+ New Frame</button>
+        <button class="frames-btn" @click=${() => this._showFramesList()}>Frames</button>
+      </div>
+      <div class="dockview-container"></div>
+    `;
   }
 }

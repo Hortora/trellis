@@ -38,6 +38,8 @@ Trellis is a local Electron app backed by a Quarkus sidecar that serves as an ep
 # Frontend (inside sidecar/src/main/webui/)
 yarn install                                               # install deps
 yarn build                                                 # build frontend
+yarn test                                                  # run vitest tests
+yarn test:watch                                            # vitest watch mode
 
 # Electron shell
 npm install --prefix shell                                 # install electron
