@@ -261,6 +261,33 @@ The WebSocket connection to tmux stays alive regardless of renderer tier.
 Output continues buffering in xterm.js's terminal buffer even with no renderer.
 When switching back to a hidden tab, full scrollback is present.
 
+**One connection per tmux session:** `TerminalWebSocket` enforces that
+only one active WebSocket connection exists per tmux session name. When
+`onOpen` receives a connection for a session that already has an active
+connection, it closes the previous connection (triggering its `cleanup()`)
+before setting up the new pipe-pane. This prevents the pipe-pane takeover
+problem where the old connection silently stops receiving data.
+
+Implementation: `TerminalWebSocket` maintains a
+`ConcurrentHashMap<String, WebSocketConnection> activeBySession`
+(keyed by session name, not connection ID). On `onOpen`, call
+`activeBySession.put(sessionName, connection)` — if the previous value
+is non-null and not the same connection, close it. On `cleanup`, remove
+the entry only if it still points to this connection (compare by
+connection ID to avoid closing a newer connection's entry).
+
+### FIFO Lifecycle
+
+FIFO files at `/tmp/trellis-{connectionId}.pipe` are cleaned up in
+`@OnClose` and `@OnError`. For abnormal termination (SIGKILL, OOM):
+
+- **Startup sweep:** On sidecar startup, before `TerminalRegistry.bootstrap()`,
+  sweep `/tmp/trellis-*.pipe` and remove all stale FIFOs. Any FIFO from a
+  previous sidecar process is guaranteed stale — the sidecar is single-instance.
+- **JVM shutdown hook:** Best-effort cleanup of all FIFOs tracked in
+  `fifoPaths` for SIGTERM and normal shutdown. Not guaranteed for SIGKILL,
+  hence the startup sweep.
+
 ### Visibility
 
 Hidden terminals use `visibility: hidden` not `display: none` — this preserves
@@ -321,6 +348,19 @@ Dismiss on mouse leave or keyboard nav away. Styled as a dark panel matching
 Frame order is determined by the `order` field in `FrameLayout`, assigned
 at creation time (max existing order + 1). Order is stable across drag,
 resize, and focus changes.
+
+**Spatial navigation algorithm (`Cmd+Opt+Arrow`):**
+
+1. Compute the center point of the current frame.
+2. Filter candidate frames to those whose center lies in the directional
+   half-plane relative to the current frame's center (e.g., for Right:
+   `candidate.centerX > current.centerX`).
+3. Among candidates, pick the one with shortest Euclidean distance
+   (center-to-center).
+4. **Tie-breaking:** prefer the candidate closer to the primary axis
+   (e.g., for Right: smaller `|deltaY|`).
+5. If no candidates exist in the half-plane (edge of layout), do nothing
+   (no wrapping — spatial navigation is inherently non-cyclic).
 
 Note: `Ctrl+[` produces ESC (ASCII 27) — essential for vim, tmux prefix, and
 any program reading escape sequences. All frame/window navigation uses
@@ -383,6 +423,11 @@ Named tab collections for stable repo groupings.
   `groupId`). Syncs group definition to current tabs.
 - **Divergence:** Adding ad-hoc tabs to a group-based frame doesn't change the
   group. The group stays clean until explicitly updated.
+- **Template semantics:** Groups are templates, not live bindings. The
+  `groupId` on a frame is provenance metadata recording which group it was
+  opened from — not a live subscription. Changes to a group definition do
+  not propagate to existing frames opened from that group. Each frame's
+  `FrameLayout.tabs` is authoritative for that frame's content.
 - **Delete group:** Right-click title → "Delete Group" (or `Cmd+Shift+Backspace`
   when a group-based frame is focused). Removes the group definition from
   `PersistedGroups`. The frame remains open but loses its `groupId` — it
@@ -414,24 +459,61 @@ is superseded. The LayoutStore evolves to provide typed methods:
 Dashboard panel or a layout save fires. This provides the workspace root at
 startup without requiring user input.
 
+### Shutdown Save Protocol
+
+The existing `before-quit` handler calls `wm.closeAll()` before any layout
+save — destroying window tracking and renderer processes before the
+debounced frontend save can fire. The shutdown sequence must be:
+
+1. `before-quit` fires, calls `event.preventDefault()`.
+2. Main process sends `layout:flush` IPC to every non-destroyed
+   BrowserWindow.
+3. Each window's frontend immediately serializes Dockview state and calls
+   `trellis.saveLayout(workspacePath, layout)` — bypassing the debounce.
+4. Main process awaits all `layout:flush` responses (or 2s timeout —
+   if a window is unresponsive, the last debounced save is the fallback).
+5. `wm.closeAll()` → `server.killServer()` → `app.exit(0)`.
+
+The `layout:flush` handler in the frontend calls the same serialization
+path as the debounced auto-save — no separate code path, just immediate
+invocation.
+
 ### Restore Sequence on Startup
 
 1. Sidecar starts, bootstraps `TerminalRegistry` from surviving tmux sessions.
-2. Electron reads `lastWorkspacePath` from `LayoutStore`.
-   - Found → proceed to step 3.
+2. **Readiness gate:** The sidecar exposes `GET /api/health/ready` that
+   returns 200 only after `TerminalRegistry.bootstrap()` completes. The
+   existing `GET /api/health` returns 200 as soon as the HTTP layer is up
+   (used by the health monitor for crash detection). The Electron shell
+   polls `/api/health/ready` before opening the main window — this
+   prevents the frontend from connecting WebSockets to sessions that
+   haven't been indexed yet.
+3. Electron reads `lastWorkspacePath` from `LayoutStore`.
+   - Found → proceed to step 4.
    - Not found → workspace panel opens in empty state (no frames). User
      switches to Dashboard panel to scan a workspace root.
-3. Electron loads `PersistedLayout`, `PersistedGroups`, and `PersistedKeymap`
+4. Electron loads `PersistedLayout`, `PersistedGroups`, and `PersistedKeymap`
    from their respective `LayoutStore` keys for the workspace path.
-4. For each `ShellLayout` in the layout: create BrowserWindow with saved
-   bounds.
-5. Frontend creates Dockview floating groups matching `FrameLayout` positions,
+5. For each `ShellLayout` in the layout: create BrowserWindow with saved
+   bounds, **clamped to available display area** (see below).
+6. Frontend creates Dockview floating groups matching `FrameLayout` positions,
    ordered by `order` field.
-6. For each tab: look up `terminalName` in `TerminalRegistry`.
+7. For each tab: look up `terminalName` in `TerminalRegistry`.
    - Found → connect WebSocket, attach renderer per tier rules (§3).
    - Not found → show "Disconnected" state with reconnect/restart button.
-7. Focus the frame and tab identified by `ShellLayout.lastActiveFrameId` and
+   As defence in depth, WebSocket connection uses retry with exponential
+   backoff (100ms, 200ms, 400ms, up to 3 retries) before showing
+   "Disconnected" — handles any residual race after readiness gating.
+8. Focus the frame and tab identified by `ShellLayout.lastActiveFrameId` and
    `FrameLayout.activeTabIndex`.
+
+**Display bounds validation (step 5):** During restore, all
+`ShellLayout.bounds` and `FrameLayout.position` are validated against
+`screen.getAllDisplays()`. For each `ShellLayout`, if its saved bounds
+don't intersect any current display, the window is repositioned to the
+primary display at a default offset. For each `FrameLayout`, positions
+beyond the owning window's content area are clamped to fit. This handles
+the common case of undocking a monitor between sessions.
 
 ### Folder Rescan Resilience
 
@@ -502,6 +584,27 @@ pinned ones.
   deduplicate). If the source window closes before the target reconstructs,
   the persisted layout already contains the frame — restore picks it up.
 
+### Panel Switching and DOM Retention
+
+The workbench currently renders only the active panel and removes inactive
+panels from the DOM (via Lit's `render()` replacing `.panel-area`
+content). Dockview's state is DOM-resident — removing and re-inserting
+its container element breaks floating group tracking.
+
+The workbench must be modified to keep all cached panel elements in the
+DOM simultaneously, hiding inactive panels with `display: none`.
+The `render()` method renders all entries from `_panelCache` and
+applies `display: none` to all except the active panel. This preserves
+Dockview's internal DOM state, WebSocket connections, and terminal
+buffers across panel switches.
+
+Note: `display: none` (not `visibility: hidden`) is correct here because
+the entire panel is inactive — we want to reclaim layout space and avoid
+Dockview processing visibility events for a hidden container. The
+`visibility: hidden` rule in §3 applies to individual terminal containers
+within the active workspace panel, where layout dimensions must be
+preserved for `fit()`.
+
 ### Detached Windows as Full Citizens
 
 Every BrowserWindow loads the same `trellis-workbench` with dock-bar and
@@ -545,6 +648,15 @@ When a tab is added for a repo with no terminal session:
    session recovered at bootstrap). Frontend connects to the existing terminal
    via its WebSocket — no error shown, no suffix.
 4. Starting an agent remains an explicit action
+
+**Atomicity:** `TerminalRegistry.createSession()` must be atomic with
+respect to the name reservation. The current `get() → create()` sequence
+in `TerminalResource` has a TOCTOU race when two requests arrive for the
+same name. Fix: `TerminalRegistry.createSession()` uses
+`sessions.putIfAbsent(name, placeholder)` as the atomic gate. If
+`putIfAbsent` returns non-null, the name is taken — return immediately
+without calling tmux. If tmux session creation fails after reservation,
+`sessions.remove(name)` rolls back the reservation.
 
 Slot terminals already exist when a slot is active. No auto-creation needed.
 
