@@ -4,11 +4,12 @@ const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 
 class WindowManager {
-  constructor({ port, preloadPath }) {
+  constructor({ port, preloadPath, onWindowClosed }) {
     this._port = port;
     this._preloadPath = preloadPath;
     this._windows = new Map();
     this._panels = new Map();
+    this._onWindowClosed = onWindowClosed || (() => {});
   }
 
   async createWindow(route, opts = {}) {
@@ -31,6 +32,7 @@ class WindowManager {
       for (const [panelId, winId] of this._panels) {
         if (winId === win.id) this._panels.delete(panelId);
       }
+      this._onWindowClosed(win.id);
     });
 
     await win.loadURL(this._routeUrl(route));

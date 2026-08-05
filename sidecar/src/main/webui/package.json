@@ -15,6 +15,7 @@
     "@casehubio/pages-runtime": "*",
     "@casehubio/pages-ui": "*",
     "@casehubio/pages-ui-components": "*",
+    "dockview-core": "^7.0.4",
     "echarts": "^6.1.0",
     "lit": "^3.3.3",
     "marked": "^15.0.12"

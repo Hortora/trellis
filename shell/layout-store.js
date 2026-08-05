@@ -13,26 +13,55 @@ class LayoutStore {
     await this._ready;
   }
 
-  async save(workspacePath, layout) {
-    if (!layout || !Array.isArray(layout.windows)) {
-      throw new Error('Layout must have windows array');
-    }
+  async saveGroups(workspacePath, groups) {
     await this._ensureReady();
-    this._store.set(this._key(workspacePath), layout);
+    this._store.set(this._key(workspacePath, 'groups'), groups);
   }
 
-  async load(workspacePath) {
+  async loadGroups(workspacePath) {
     await this._ensureReady();
-    return this._store.get(this._key(workspacePath)) || null;
+    return this._store.get(this._key(workspacePath, 'groups')) || null;
+  }
+
+  async saveLayout(workspacePath, layout) {
+    await this._ensureReady();
+    this._store.set(this._key(workspacePath, 'layout'), layout);
+  }
+
+  async loadLayout(workspacePath) {
+    await this._ensureReady();
+    return this._store.get(this._key(workspacePath, 'layout')) || null;
+  }
+
+  async saveKeymap(workspacePath, keymap) {
+    await this._ensureReady();
+    this._store.set(this._key(workspacePath, 'keymap'), keymap);
+  }
+
+  async loadKeymap(workspacePath) {
+    await this._ensureReady();
+    return this._store.get(this._key(workspacePath, 'keymap')) || null;
+  }
+
+  async saveLastWorkspacePath(workspacePath) {
+    await this._ensureReady();
+    this._store.set('lastWorkspacePath', workspacePath);
+  }
+
+  async loadLastWorkspacePath() {
+    await this._ensureReady();
+    return this._store.get('lastWorkspacePath') || null;
   }
 
   async clear(workspacePath) {
     await this._ensureReady();
-    this._store.delete(this._key(workspacePath));
+    this._store.delete(this._key(workspacePath, 'groups'));
+    this._store.delete(this._key(workspacePath, 'layout'));
+    this._store.delete(this._key(workspacePath, 'keymap'));
   }
 
-  _key(workspacePath) {
-    return `layouts.${workspacePath}`;
+  _key(workspacePath, prefix) {
+    return `${prefix}.${workspacePath}`;
   }
 }
 

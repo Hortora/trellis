@@ -53,11 +53,6 @@ public class TerminalResource {
                            .entity(Map.of("error", "name is required"))
                            .build();
         }
-        if (registry.get(request.name()).isPresent()) {
-            return Response.status(Response.Status.CONFLICT)
-                           .entity(Map.of("error", "terminal already exists: " + request.name()))
-                           .build();
-        }
         try {
             String workDir = request.workingDir() != null ? request.workingDir() : "/tmp";
             registry.createSession(request.name(), workDir, request.slot(), request.repo(), request.issue());
@@ -67,6 +62,10 @@ public class TerminalResource {
             var terminal = registry.get(request.name()).orElseThrow();
             return Response.status(Response.Status.CREATED)
                            .entity(processManager.getSnapshot(request.name(), terminal))
+                           .build();
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.CONFLICT)
+                           .entity(Map.of("error", "terminal already exists: " + request.name()))
                            .build();
         } catch (IOException | InterruptedException e) {
             return Response.serverError()

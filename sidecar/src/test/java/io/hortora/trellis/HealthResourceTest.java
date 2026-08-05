@@ -17,4 +17,14 @@ class HealthResourceTest {
             .statusCode(200)
             .body("status", is("ok"));
     }
+
+    @Test
+    void readyEndpointReturns200AfterBootstrap() {
+        given()
+                .when().get("/api/health/ready")
+                .then()
+                .statusCode(200)
+                .body("status", is("ready"));
+    }
+
 }

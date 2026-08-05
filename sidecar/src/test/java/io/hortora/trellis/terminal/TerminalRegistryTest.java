@@ -1,11 +1,17 @@
 package io.hortora.trellis.terminal;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class TerminalRegistryTest {
@@ -58,6 +64,18 @@ class TerminalRegistryTest {
         assertEquals("engine", info.repo());
         assertEquals("42", info.issue());
     }
+
+    @Test
+    void createSessionRejectsDuplicateNameAtomically() throws IOException, InterruptedException {
+        registry.createSession(sessionName, "/tmp", null, null, null);
+
+        assertThrows(IllegalStateException.class, () ->
+                                                          registry.createSession(sessionName, "/tmp", null, null, null));
+
+        assertTrue(registry.get(sessionName).isPresent());
+        assertTrue(tmux.hasSession(sessionName));
+    }
+
 
     @Test
     void destroySessionRemovesFromRegistryAndTmux() throws IOException, InterruptedException {

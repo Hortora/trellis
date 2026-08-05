@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../views/org-dashboard';
 import '../views/slot-detail';
@@ -7,6 +7,7 @@ import '../views/garden-view';
 import '../views/artifact-panel';
 import '../views/repo-detail';
 import '../components/coordinator-panel';
+import '../components/workspace-view';
 import '../views/protocol-view';
 
 interface PanelDef {
@@ -16,7 +17,8 @@ interface PanelDef {
 }
 
 const PANELS: Record<string, PanelDef> = {
-  workspace:   { icon: '\u{1F4C1}', label: 'Workspace',   tag: 'trellis-org-dashboard' },
+  workspace:   { icon: '\u{2B1A}', label: 'Workspace',   tag: 'trellis-workspace-view' },
+  dashboard:   { icon: '\u{1F4C1}', label: 'Dashboard',   tag: 'trellis-org-dashboard' },
   slot:        { icon: '\u{1F4CB}', label: 'Slot',         tag: 'trellis-slot-detail' },
   artifacts:   { icon: '\u{1F4C4}', label: 'Artifacts',    tag: 'trellis-artifact-panel' },
   garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
@@ -27,7 +29,7 @@ const PANELS: Record<string, PanelDef> = {
   repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
 };
 
-const DOCK_PANELS = ['workspace', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
+const DOCK_PANELS = ['workspace', 'dashboard', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -149,14 +151,16 @@ export class TrellisWorkbench extends LitElement {
       this._activePanel = 'protocols';
     } else if (hash.match(/^#memory/)) {
       this._activePanel = 'memory';
-    } else {
+    } else if (hash.match(/^#workspace/)) {
       this._activePanel = 'workspace';
+    } else {
+      this._activePanel = 'dashboard';
     }
 
     this._panelContext = ctx;
     this._lastHash.set(this._activePanel, hash);
     if (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo') {
-      this._lastHash.set('workspace', hash);
+      this._lastHash.set('dashboard', hash);
     }
   }
 
@@ -166,7 +170,7 @@ export class TrellisWorkbench extends LitElement {
       location.hash = saved;
     } else {
       const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
-      if (id === 'workspace') {
+      if (id === 'dashboard') {
         location.hash = `#?${root}`;
       } else {
         location.hash = `#${id}?${root}`;
@@ -207,10 +211,10 @@ export class TrellisWorkbench extends LitElement {
   }
 
   override render() {
-    const panel = this._getOrCreatePanel(this._activePanel);
+    this._getOrCreatePanel(this._activePanel);
     return html`
       <div class="dock-bar">
-        ${DOCK_PANELS.map(id => { const def = PANELS[id]; const isActive = id === this._activePanel || (id === 'workspace' && (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo')); return html`
+        ${DOCK_PANELS.map(id => { const def = PANELS[id]; const isActive = id === this._activePanel || (id === 'dashboard' && (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo')); return html`
           <button class="dock-btn"
                   title=${def.label}
                   ?data-active=${isActive}
@@ -219,7 +223,11 @@ export class TrellisWorkbench extends LitElement {
           </button>
         `;})}
       </div>
-      <div class="panel-area">${panel ?? nothing}</div>
+      <div class="panel-area">
+        ${[...this._panelCache.entries()].map(([id, el]) =>
+          html`<div style="display:${id === this._activePanel ? 'contents' : 'none'}">${el}</div>`
+        )}
+      </div>
     `;
   }
 }

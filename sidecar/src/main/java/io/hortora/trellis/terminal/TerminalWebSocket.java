@@ -1,12 +1,16 @@
 package io.hortora.trellis.terminal;
 
-import io.quarkus.websockets.next.*;
+import io.quarkus.websockets.next.OnClose;
+import io.quarkus.websockets.next.OnError;
+import io.quarkus.websockets.next.OnOpen;
+import io.quarkus.websockets.next.OnTextMessage;
+import io.quarkus.websockets.next.WebSocket;
+import io.quarkus.websockets.next.WebSocketConnection;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
-import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 @WebSocket(path = "/ws/terminal/{id}/{cols}/{rows}")
@@ -22,21 +26,54 @@ public class TerminalWebSocket {
 
     private final ConcurrentHashMap<String, String> sessionNames = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> fifoPaths = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, WebSocketConnection> activeBySession = new ConcurrentHashMap<>();
+
+    {
+        Runtime.getRuntime().addShutdownHook(Thread.ofVirtual().unstarted(() -> {
+            for (var path : fifoPaths.values()) {
+                try {java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(path));} catch (Exception ignored) {}
+            }
+        }));
+    }
+
+
+    void onStart(@jakarta.enterprise.event.Observes io.quarkus.runtime.StartupEvent event) {
+        try {
+            java.nio.file.Path tmpDir = java.nio.file.Path.of("/tmp");
+            if (java.nio.file.Files.isDirectory(tmpDir)) {
+                try (var stream = java.nio.file.Files.newDirectoryStream(tmpDir, "trellis-*.pipe")) {
+                    for (var fifo : stream) {
+                        java.nio.file.Files.deleteIfExists(fifo);
+                        LOG.infof("Startup sweep: removed stale FIFO %s", fifo);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            LOG.warnf("Failed to sweep stale FIFOs: %s", e.getMessage());
+        }
+    }
 
     @OnOpen
     public void onOpen(WebSocketConnection connection) {
         var sessionName = connection.pathParam("id");
         if (registry.get(sessionName).isEmpty()) {
             LOG.warnf("WebSocket open for unknown session %s — closing", sessionName);
-            try { connection.closeAndAwait(); } catch (Exception ignored) {}
+            try {connection.closeAndAwait();} catch (Exception ignored) {}
             return;
         }
 
-        int cols = parsePathInt(connection.pathParam("cols"));
-        int rows = parsePathInt(connection.pathParam("rows"));
+        int cols     = parsePathInt(connection.pathParam("cols"));
+        int rows     = parsePathInt(connection.pathParam("rows"));
         var fifoPath = "/tmp/trellis-" + connection.id() + ".pipe";
 
         sessionNames.put(connection.id(), sessionName);
+
+        var previous = activeBySession.put(sessionName, connection);
+        if (previous != null && !previous.id().equals(connection.id())) {
+            LOG.infof("Session takeover for %s — closing previous connection %s", sessionName, previous.id());
+            cleanup(previous);
+            try {previous.closeAndAwait(new io.quarkus.websockets.next.CloseReason(4001, "session-takeover"));} catch (Exception ignored) {}
+        }
 
         try {
             new ProcessBuilder("mkfifo", fifoPath)
@@ -63,7 +100,7 @@ public class TerminalWebSocket {
         } catch (IOException | InterruptedException e) {
             LOG.errorf("Failed to set up pipe for session %s: %s", sessionName, e.getMessage());
             cleanup(connection);
-            try { connection.closeAndAwait(); } catch (Exception ignored) {}
+            try {connection.closeAndAwait();} catch (Exception ignored) {}
         }
     }
 
@@ -92,11 +129,12 @@ public class TerminalWebSocket {
     private void cleanup(WebSocketConnection connection) {
         var sessionName = sessionNames.remove(connection.id());
         if (sessionName != null) {
-            try { tmux.stopPipePane(sessionName); } catch (Exception ignored) {}
+            try {tmux.stopPipePane(sessionName);} catch (Exception ignored) {}
+            activeBySession.remove(sessionName, connection);
         }
         var fifoPath = fifoPaths.remove(connection.id());
         if (fifoPath != null) {
-            try { Files.deleteIfExists(Path.of(fifoPath)); } catch (Exception ignored) {}
+            try {java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(fifoPath));} catch (Exception ignored) {}
         }
     }
 

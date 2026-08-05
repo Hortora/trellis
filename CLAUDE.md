@@ -53,9 +53,12 @@ npm start                                                  # launch app (require
 - Package root: `io.hortora.trellis`
 - Quarkus 3.x with Quinoa (esbuild + yarn berry)
 - Pages/blocks-ui consumed as Maven SNAPSHOT artifacts via portal: resolutions
-- Electron shell follows sparge pattern: find free port, spawn sidecar, poll health, open window
-- `GET /api/health` — sidecar readiness endpoint
-- Frontend uses a dock-bar workbench shell (`trellis-workbench`) — existing views are panels, not standalone hash-routed pages
+- Electron shell follows sparge pattern: find free port, spawn sidecar, poll health/ready, open window
+- `GET /api/health` — sidecar liveness; `GET /api/health/ready` — sidecar readiness (200 after TerminalRegistry bootstrap, 503 before)
+- Frontend uses a dock-bar workbench shell (`trellis-workbench`) — views are panels, not standalone hash-routed pages
+- Workspace panel (`trellis-workspace-view`) — Dockview-backed floating frames with tabbed terminals. Dashboard panel (`trellis-org-dashboard`) — organisational overview (repo cards, slots, epics)
+- Workspace view terminology: Workbench → Panel → Frame → Tab. Frames are Dockview floating groups; tabs reference terminals by name
+- Dockview (`dockview-core` v7+) for frame/tab management — vanilla TS, MIT, zero dependencies
 - New panels should use platform rendering primitives (`marked`, pages DSL, `pages-data-table`) — the artifact panel is the reference for markdown, the memory panel is the reference for tabular data
 - Tables use `pages-data-table` with `fromRows()` for data binding, custom `columnRenderers` for badges/buttons, and `mode="paginated"` for content-sized tables
 - Frontend theme: `casehub-dark` via `applyTheme()` + `pages-density-compact` class on documentElement
