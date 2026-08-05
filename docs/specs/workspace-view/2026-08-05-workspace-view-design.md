@@ -37,14 +37,33 @@ codebase make this viable.
 
 Workbench → Panel (workspace) → Frames → Tabs. Four levels, no overloading.
 
+Implementation note: Dockview's group type is `DockviewGroupPanel`, not
+`Group`, so there is no import collision with the spec's `Group` type.
+
 ## §1 Data Model
 
+Groups, layout, and keymap are stored under separate electron-store keys
+(see §6) to isolate save triggers and failure domains.
+
 ```typescript
-interface PersistedWorkspace {
+// --- Storage shapes (one electron-store key each) ---
+
+// groups.{workspacePath} — saved on explicit user action only
+interface PersistedGroups {
   groups: Group[];
-  layout: ShellLayout[];
-  keymap?: KeymapOverrides;
 }
+
+// layout.{workspacePath} — saved on every layout change, debounced 1s
+interface PersistedLayout {
+  windows: ShellLayout[];
+}
+
+// keymap.{workspacePath} — saved on user keymap change
+interface PersistedKeymap {
+  overrides: KeymapOverrides;
+}
+
+// --- Domain types ---
 
 interface Group {
   id: string;
@@ -62,22 +81,19 @@ interface ShellLayout {
   bounds: { x: number; y: number; width: number; height: number };
   isMain: boolean;
   frames: FrameLayout[];
+  lastActiveFrameId?: string;
 }
 
 interface FrameLayout {
   id: string;
   groupId?: string;
+  order: number;
   position: { x: number; y: number };
   size: { width: number; height: number };
   zIndex: number;
   pinned: boolean;
-  tabs: TabState[];
+  tabs: TabRef[];
   activeTabIndex: number;
-}
-
-interface TabState {
-  terminalName: string;
-  type: 'repo' | 'slot';
 }
 
 interface KeymapOverrides {
@@ -89,18 +105,29 @@ interface KeymapOverrides {
   that group. Or it may be ad-hoc (no `groupId`).
 - Groups are the persistence unit for stable groupings. Frames are the
   persistence unit for runtime positions.
-- `TabState.terminalName` is the key into the existing `TerminalRegistry` —
+- `TabRef.terminalName` is the key into the existing `TerminalRegistry` —
   all metadata (repo info, agent state, working dir) is looked up from there,
   not duplicated.
 - `pinned` means always-on-top AND position-locked.
+- `order` is assigned at frame creation (max existing order + 1) and is
+  stable across repositioning. Used by `Cmd+Opt+1`..`Cmd+Opt+9` and cycle
+  navigation (see §5).
+- `TabRef` is used in both `Group.tabs` and `FrameLayout.tabs` — the same
+  shape, same semantics, one type.
 
 ## §2 Frame Manager (Dockview Integration)
 
 ### Component: `trellis-workspace-view`
 
 A new Lit component registered as the workspace panel in the dock-bar. Hosts
-the Dockview instance and manages the frame lifecycle. Replaces
-`trellis-org-dashboard`.
+the Dockview instance and manages the frame lifecycle.
+
+`trellis-org-dashboard` moves to its own dock-bar panel ("Dashboard") and
+retains all existing rendering: repo cards, slot status, epic progress,
+paused branches. The workspace panel is for terminal work; the dashboard
+panel is for organisational overview. The workbench `DOCK_PANELS` array
+gains a `dashboard` entry and the `PANELS` map rebinds the `workspace` key
+to `trellis-workspace-view`.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -147,6 +174,9 @@ the Dockview instance and manages the frame lifecycle. Replaces
 - Click anywhere in a frame → `z-index = ++maxZ`.
 - Two z-tiers: normal (0–9999) and pinned (10000+). Pinned frames always
   render above normal frames.
+- On persistence save: z-indices are normalized to sequential integers
+  (1, 2, ..., N within each tier) preserving relative order. Prevents
+  unbounded growth across sessions.
 
 ### Frame Chrome
 
@@ -167,7 +197,7 @@ with `--max-active-webgl-contexts` flag) is the hard architectural constraint.
 |------|-----------|----------|------|
 | Active | Focused tab in focused frame | WebGL | Full GPU acceleration |
 | Visible | Active tab in non-focused frames | Canvas | CPU-rendered, lighter |
-| Hidden | Non-active tabs, fully occluded frames | None | Renderer disposed |
+| Hidden | Non-active tabs (background tabs within a frame) | None | Renderer disposed |
 
 ### Lifecycle Transitions
 
@@ -178,8 +208,44 @@ with `--max-active-webgl-contexts` flag) is the hard architectural constraint.
 
 ### WebGL Context Budget
 
-Track active contexts globally. If promoting to WebGL would exceed 16, demote
-the least-recently-focused WebGL terminal to Canvas first.
+All BrowserWindows share one GPU process, so the 16-context limit is global.
+Each window's renderer process tracks its own local count but coordinates
+through the main process via IPC:
+
+- `webgl:acquire` — window requests a WebGL slot before promoting a terminal.
+  Main process grants if total < 16; denies otherwise (terminal stays Canvas).
+- `webgl:release` — window notifies when a WebGL renderer is disposed or
+  demoted.
+- `webgl:demote` — main process sends to the window holding the least-recently-
+  focused WebGL context when a higher-priority window needs a slot. Target
+  window demotes that terminal to Canvas and replies with `webgl:release`.
+
+The main process maintains a global LRU list of `{windowId, terminalName,
+lastFocusedAt}` entries to determine demotion order across windows.
+
+### Ownership
+
+`trellis-workspace-view` owns renderer lifecycle. It listens to Dockview's
+panel visibility and focus events and drives all promote/demote/dispose
+transitions. Each BrowserWindow runs its own `trellis-workspace-view` with
+its own WebGL context budget (16 per window) — no cross-window coordination
+is needed for renderer management.
+
+### Terminal vs Renderer Lifetime
+
+The xterm.js `Terminal` instance is created when a tab is added to a frame
+and destroyed only when the tab is permanently removed (closed or frame
+destroyed). Renderer attachment is a sub-operation of the Terminal:
+
+- `Terminal.open(container)` attaches a renderer to the DOM
+- Changing renderer tier disposes the current renderer and optionally
+  attaches a new one, but never disposes the `Terminal` itself
+- The WebSocket data handler writes to the Terminal's buffer regardless
+  of whether a renderer is attached
+
+Dispose renderer ≠ dispose Terminal. The buffer survives all renderer
+transitions, which is what makes the tab hover flyout (§4) and seamless
+tab switching work.
 
 ### Connection Persistence
 
@@ -239,17 +305,26 @@ Dismiss on mouse leave or keyboard nav away. Styled as a dark panel matching
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+]` | Next frame (cycle order) |
-| `Ctrl+[` | Previous frame |
-| `Ctrl+1`..`Ctrl+9` | Jump to frame N |
-| `Ctrl+Arrow` | Spatial — focus nearest frame in that direction |
+| `Cmd+Opt+]` | Next frame (creation order, wrapping) |
+| `Cmd+Opt+[` | Previous frame (creation order, wrapping) |
+| `Cmd+Opt+1`..`Cmd+Opt+9` | Jump to frame N (by creation order) |
+| `Cmd+Opt+Arrow` | Spatial — focus nearest frame in that direction |
+
+Frame order is determined by the `order` field in `FrameLayout`, assigned
+at creation time (max existing order + 1). Order is stable across drag,
+resize, and focus changes.
+
+Note: `Ctrl+[` produces ESC (ASCII 27) — essential for vim, tmux prefix, and
+any program reading escape sequences. All frame/window navigation uses
+`Cmd`-based modifiers so shortcuts are intercepted at the app level before
+reaching xterm.
 
 ### Cross-Window Navigation
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+]` | Next browser window |
-| `Ctrl+Shift+[` | Previous browser window |
+| `Cmd+Ctrl+]` | Next browser window |
+| `Cmd+Ctrl+[` | Previous browser window |
 
 ### Global Shortcuts
 
@@ -259,17 +334,24 @@ Dismiss on mouse leave or keyboard nav away. Styled as a dark panel matching
 | `Cmd+T` | New tab in focused frame (repo/slot picker) |
 | `Cmd+W` | Close active tab (close frame if last tab) |
 | `Cmd+Shift+W` | Close frame |
+| `Cmd+Shift+S` | Save focused frame as group |
+| `Cmd+Shift+Backspace` | Delete group (when focused frame has `groupId`) |
 | `Cmd+Shift+P` | Pin/unpin focused frame |
 | `Cmd+Shift+D` | Detach focused frame |
 | `Cmd+Shift+L` | Organiser preset picker |
 
 ### Implementation
 
-- Global `keydown` listener on the workspace panel. Registered when workspace
-  panel is active, removed when switching to another dock-bar panel.
+- `Cmd+N`, `Cmd+T`, `Cmd+W` are registered as Electron application menu
+  accelerators in `main.js`. This overrides the default Chromium accelerators
+  (new window, new tab, close window). Menu item actions dispatch IPC to the
+  focused window's workspace panel handler.
+- All other shortcuts are handled via a global `keydown` listener on the
+  workspace panel. Registered when workspace panel is active, removed when
+  switching to another dock-bar panel.
 - `attachCustomKeyEventHandler()` on every xterm.js instance — intercepts app
   shortcuts (returns `false`), passes everything else to xterm (returns `true`).
-- Keymap stored in `Layout.keymap` for user customisation.
+- Keymap stored in `PersistedKeymap.overrides` for user customisation (see §1).
 
 ### Focus Model
 
@@ -293,25 +375,54 @@ Named tab collections for stable repo groupings.
   `groupId`). Syncs group definition to current tabs.
 - **Divergence:** Adding ad-hoc tabs to a group-based frame doesn't change the
   group. The group stays clean until explicitly updated.
+- **Delete group:** Right-click title → "Delete Group" (or `Cmd+Shift+Backspace`
+  when a group-based frame is focused). Removes the group definition from
+  `PersistedGroups`. The frame remains open but loses its `groupId` — it
+  becomes ad-hoc.
 
 ### Persistence
 
-Two things persisted via `LayoutStore` (electron-store), keyed by workspace
-path:
+Three concerns persisted via `LayoutStore` (electron-store), each under its
+own key, scoped by workspace path:
 
-1. **Groups** — saved on explicit user action (save/update group).
-2. **Layout** — saved on every layout change, debounced at 1 second.
+1. **Groups** (`groups.{workspacePath}`) — saved on explicit user action
+   (save/update group). Never written by layout auto-save.
+2. **Layout** (`layout.{workspacePath}`) — saved on every layout change,
+   debounced at 1 second. Contains `{ windows: ShellLayout[] }`.
+3. **Keymap** (`keymap.{workspacePath}`) — saved on user keymap change.
+
+Separate keys ensure that frequent layout saves cannot corrupt group data
+and that a failed layout save does not affect groups or keymap.
+
+The existing `LayoutStore.save()` validation (`Array.isArray(layout.windows)`)
+is superseded. The LayoutStore evolves to provide typed methods:
+`saveGroups`/`loadGroups`, `saveLayout`/`loadLayout`, `saveKeymap`/`loadKeymap`.
+
+### Workspace Path Persistence
+
+`LayoutStore` persists `lastWorkspacePath` as a top-level electron-store key
+(not workspace-scoped). Updated whenever a workspace is scanned from the
+Dashboard panel or a layout save fires. This provides the workspace root at
+startup without requiring user input.
 
 ### Restore Sequence on Startup
 
 1. Sidecar starts, bootstraps `TerminalRegistry` from surviving tmux sessions.
-2. Electron loads `PersistedWorkspace` from `LayoutStore` for the workspace.
-3. For each `ShellLayout`: create BrowserWindow with saved bounds.
-4. Frontend creates Dockview floating groups matching `FrameLayout` positions.
-5. For each tab: look up `terminalName` in `TerminalRegistry`.
+2. Electron reads `lastWorkspacePath` from `LayoutStore`.
+   - Found → proceed to step 3.
+   - Not found → workspace panel opens in empty state (no frames). User
+     switches to Dashboard panel to scan a workspace root.
+3. Electron loads `PersistedLayout`, `PersistedGroups`, and `PersistedKeymap`
+   from their respective `LayoutStore` keys for the workspace path.
+4. For each `ShellLayout` in the layout: create BrowserWindow with saved
+   bounds.
+5. Frontend creates Dockview floating groups matching `FrameLayout` positions,
+   ordered by `order` field.
+6. For each tab: look up `terminalName` in `TerminalRegistry`.
    - Found → connect WebSocket, attach renderer per tier rules (§3).
    - Not found → show "Disconnected" state with reconnect/restart button.
-6. Focus the frame and tab that were last active.
+7. Focus the frame and tab identified by `ShellLayout.lastActiveFrameId` and
+   `FrameLayout.activeTabIndex`.
 
 ### Folder Rescan Resilience
 
@@ -329,7 +440,7 @@ One-shot layout functions. They rearrange frames, then get out of the way.
 |--------|-----------|
 | Side by side | Left-to-right, equal width, full height |
 | Stacked | Top-to-bottom, full width, equal height |
-| Grid | 2→1×2, 3-4→2×2, 5-6→2×3, 7-9→3×3 |
+| Grid | 1→fills area, 2→1×2, 3-4→2×2, 5-6→2×3, 7-9→3×3, 10+→`ceil(sqrt(n))`cols × `ceil(n/cols)`rows |
 | Main + sidebar | Active frame 2/3 left, others stacked right |
 | Focus | Active frame fills area, others minimised to bottom strip |
 
@@ -357,29 +468,47 @@ pinned ones.
 ### Detach
 
 - `Cmd+Shift+D` or click detach button (⎋).
-- Frame state captured (tabs, active tab, size).
-- New BrowserWindow created via `window:create` IPC, sized to frame.
-- Loads workbench at `#workspace?detached=frameId&root=...`.
-- Detached window hosts a full workspace panel — can contain 1..N frames.
-- Original frame removed from source window.
+- Source window serializes the frame's `FrameLayout` (tabs, active tab,
+  position, size, groupId, order).
+- Electron main process creates a new BrowserWindow via `window:create` IPC,
+  sized to the frame.
+- Frame state is sent to the new window via
+  `webContents.send('frame:init', frameLayout)`.
+- New window loads workbench at `#workspace?root=...`.
+- The new window's `trellis-workspace-view` listens for `frame:init` and
+  creates a Dockview floating group from the received `FrameLayout`.
+- Original frame's Dockview group is removed from the source window.
+- Both windows persist independently as `ShellLayout` entries.
 
 ### Reattach
 
 - Right-click title → "Attach to main window."
-- Frame state sent to target window via IPC.
-- Frame created in target window's workspace panel.
-- Source window closes if it was the last frame.
+- Source window serializes the frame's `FrameLayout`.
+- Sends to main process via `trellis.sendFrameToWindow(targetWindowId, frameLayout)`.
+- Main process forwards to target window via
+  `webContents.send('frame:receive', frameLayout)`.
+- Target window's `trellis-workspace-view` creates a Dockview floating group.
+- Source window's Dockview group is removed; window closes if last frame.
+- Race safety: `frame:receive` handler is idempotent (uses frame ID to
+  deduplicate). If the source window closes before the target reconstructs,
+  the persisted layout already contains the frame — restore picks it up.
 
 ### Detached Windows as Full Citizens
 
-- Own dock-bar (can switch to garden, artifacts, etc.)
-- Can host 1..N frames
-- Own keyboard navigation scope
+Every BrowserWindow loads the same `trellis-workbench` with dock-bar and
+panel container. This is intentional:
+
+- Own dock-bar (can switch to garden, artifacts, etc.) — a detached frame
+  on a second monitor should not require switching back for non-terminal work
+- Can host 1..N frames — drag additional frames to a detached window
+- Own keyboard navigation scope (frame cycling, spatial nav)
 - Participates in layout persistence as another `ShellLayout` entry
+- All windows share the same sidecar — panels hit the same REST/SSE
+  endpoints with independent UI state per window (existing architecture)
 
 ### Cross-Window Navigation
 
-- `Ctrl+Shift+]` / `Ctrl+Shift+[` cycles between browser windows via
+- `Cmd+Ctrl+]` / `Cmd+Ctrl+[` cycles between browser windows via
   Electron's `win.focus()`.
 
 ## §9 Backend Changes
@@ -402,8 +531,11 @@ When a tab is added for a repo with no terminal session:
 
 1. Frontend calls `POST /api/terminals` with
    `{ name: "repo-{repoName}", workingDir: "{repo.path}", repo: "{repoName}" }`
-2. Creates tmux session without starting an agent — user gets a shell prompt
-3. Starting an agent remains an explicit action
+2. On `201 Created`: new tmux session without agent — user gets a shell prompt
+3. On `409 Conflict`: terminal already exists (e.g., from a surviving tmux
+   session recovered at bootstrap). Frontend connects to the existing terminal
+   via its WebSocket — no error shown, no suffix.
+4. Starting an agent remains an explicit action
 
 Slot terminals already exist when a slot is active. No auto-creation needed.
 
