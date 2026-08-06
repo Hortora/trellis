@@ -1,0 +1,10 @@
+branch: issue-43-frame-tab-management
+state: scaffolded
+project-sha: e85c1ac544ec3fb4313c3987e2bfa2228f9e9232
+date: 2026-08-06
+issue: 43
+issue-repo: Hortora/trellis
+covers: 43
+flyway-next-v: none
+design-repo: project
+design-section-hashes: 
