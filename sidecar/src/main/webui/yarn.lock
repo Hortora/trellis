@@ -610,10 +610,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@xterm/addon-canvas@npm:^0.7.0":
+  version: 0.7.0
+  resolution: "@xterm/addon-canvas@npm:0.7.0"
+  peerDependencies:
+    "@xterm/xterm": ^5.0.0
+  checksum: 10c0/b28b4e67042055432b887e20cd439e3304f1ffd25b3fab47aedfad83217d78f888e85dd9ff6f643557ec0b7649a9ec2d528ee0c50ccaf60ad07f5d68ea2beaec
+  languageName: node
+  linkType: hard
+
 "@xterm/addon-fit@npm:^0.11.0":
   version: 0.11.0
   resolution: "@xterm/addon-fit@npm:0.11.0"
   checksum: 10c0/c0ce94f7e877d07e7197d15d041cc629ce2e853016400aadddc9810838ea8a26e836f87f325eba36df88c03feb72d9f13cd8c3bb41ee31e701f1058edb8553c3
+  languageName: node
+  linkType: hard
+
+"@xterm/addon-webgl@npm:^0.19.0":
+  version: 0.19.0
+  resolution: "@xterm/addon-webgl@npm:0.19.0"
+  checksum: 10c0/238f9af3745bc027c78a6ec6ed155721f82f2f0934bc65adffc0ae997c23ad053b18f04fceb121a38945d2fc31bf0e4baa01714c4c2916781bb27873d9d5cd8b
   languageName: node
   linkType: hard
 
@@ -1338,6 +1354,8 @@ __metadata:
     "@casehubio/pages-runtime": "npm:*"
     "@casehubio/pages-ui": "npm:*"
     "@casehubio/pages-ui-components": "npm:*"
+    "@xterm/addon-canvas": "npm:^0.7.0"
+    "@xterm/addon-webgl": "npm:^0.19.0"
     dockview-core: "npm:^7.0.4"
     echarts: "npm:^6.1.0"
     esbuild: "npm:^0.25.0"

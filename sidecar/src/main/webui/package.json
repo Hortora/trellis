@@ -17,6 +17,8 @@
     "@casehubio/pages-runtime": "*",
     "@casehubio/pages-ui": "*",
     "@casehubio/pages-ui-components": "*",
+    "@xterm/addon-canvas": "^0.7.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "dockview-core": "^7.0.4",
     "echarts": "^6.1.0",
     "lit": "^3.3.3",
