@@ -44,6 +44,11 @@ export class TrellisWorkbench extends LitElement {
   private _panelCache = new Map<string, HTMLElement>();
   private _lastRoot = '';
   private _lastHash = new Map<string, string>();
+  private _pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _pushMaxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private _eventSource: EventSource | null = null;
+  private _pendingCorrelationId: string | null = null;
 
   static override styles = css`
     :host {
@@ -99,11 +104,15 @@ export class TrellisWorkbench extends LitElement {
     super.connectedCallback();
     window.addEventListener('hashchange', this._onHashChange);
     this._parseHash();
+    this._startHeartbeat();
+    this._connectSSE();
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('hashchange', this._onHashChange);
+    this._stopHeartbeat();
+    this._disconnectSSE();
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
@@ -176,6 +185,7 @@ export class TrellisWorkbench extends LitElement {
         location.hash = `#${id}?${root}`;
       }
     }
+    this._pushUIStateImmediate();
   }
 
   private _getOrCreatePanel(id: string): HTMLElement | null {
@@ -208,6 +218,95 @@ export class TrellisWorkbench extends LitElement {
     if (panelId === 'repo' && ctx['repoName']) {
       (el as any).repoName = ctx['repoName'];
     }
+  }
+
+  private _buildUIState(): Record<string, unknown> {
+    const panels: Record<string, unknown> = {};
+    for (const [id, el] of this._panelCache) {
+      panels[id] = {
+        visible: id === this._activePanel,
+        content: typeof (el as any).getUIState === 'function' ? (el as any).getUIState() : {},
+        lastPushed: Date.now(),
+      };
+    }
+    const state: Record<string, unknown> = { activePanel: this._activePanel, panels };
+    if (this._pendingCorrelationId) {
+      state['correlationId'] = this._pendingCorrelationId;
+      this._pendingCorrelationId = null;
+    }
+    return state;
+  }
+
+  private _pushUIStateImmediate() {
+    if (this._pushDebounceTimer) clearTimeout(this._pushDebounceTimer);
+    if (this._pushMaxWaitTimer) clearTimeout(this._pushMaxWaitTimer);
+    this._pushDebounceTimer = null;
+    this._pushMaxWaitTimer = null;
+    this._doPushUIState();
+  }
+
+  private _doPushUIState() {
+    const state = this._buildUIState();
+    fetch('/api/model/ui-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    }).catch(() => {});
+  }
+
+  private _startHeartbeat() {
+    this._heartbeatInterval = setInterval(() => this._doPushUIState(), 15000);
+  }
+
+  private _stopHeartbeat() {
+    if (this._heartbeatInterval) {
+      clearInterval(this._heartbeatInterval);
+      this._heartbeatInterval = null;
+    }
+  }
+
+  private _connectSSE() {
+    this._eventSource = new EventSource('/api/push?topics=control:navigate');
+    this._eventSource.addEventListener('message', (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.topic === 'control:navigate' && msg.payload) {
+          const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+          this._handleNavigateEvent(payload);
+        }
+      } catch { /* ignore parse errors */ }
+    });
+  }
+
+  private _disconnectSSE() {
+    if (this._eventSource) {
+      this._eventSource.close();
+      this._eventSource = null;
+    }
+  }
+
+  _handleNavigateEvent(payload: { target: string; correlationId?: string }) {
+    const { target, correlationId } = payload;
+    if (correlationId) {
+      this._pendingCorrelationId = correlationId;
+    }
+
+    if (target.startsWith('dock-bar/')) {
+      const panelId = target.substring('dock-bar/'.length);
+      if (PANELS[panelId]) {
+        this._activatePanel(panelId);
+      }
+    } else if (target.startsWith('panels/')) {
+      const parts = target.substring('panels/'.length).split('/');
+      const panelId = parts[0];
+      if (panelId === 'workspace-view' || panelId === 'workspace') {
+        this._activatePanel('workspace');
+      } else if (PANELS[panelId]) {
+        this._activatePanel(panelId);
+      }
+    }
+
+    this._pushUIStateImmediate();
   }
 
   override render() {

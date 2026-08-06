@@ -1,6 +1,7 @@
 package io.hortora.trellis.agent;
 
 import io.casehub.pages.push.EventBroadcaster;
+import io.hortora.trellis.mcp.GenerationCounter;
 import io.hortora.trellis.terminal.TerminalInfo;
 import io.hortora.trellis.terminal.TmuxManager;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,15 +27,17 @@ public class AgentProcessManager {
 
     private final TmuxManager tmux;
     private final EventBroadcaster broadcaster;
+    private final GenerationCounter generation;
     private final ConcurrentHashMap<String, AgentProcess> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> lastErrors = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> startingTimestamps = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     @Inject
-    public AgentProcessManager(TmuxManager tmux, EventBroadcaster broadcaster) {
+    public AgentProcessManager(TmuxManager tmux, EventBroadcaster broadcaster, GenerationCounter generation) {
         this.tmux = tmux;
         this.broadcaster = broadcaster;
+        this.generation = generation;
     }
 
     public void initializeFromBootstrap(List<TerminalInfo> terminals) {
@@ -336,6 +339,7 @@ public class AgentProcessManager {
     }
 
     private void broadcastState(String name) {
+        generation.increment();
         try {
             var process = agents.get(name);
             broadcaster.broadcast("agent:state",

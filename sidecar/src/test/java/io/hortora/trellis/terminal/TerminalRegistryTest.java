@@ -31,8 +31,8 @@ class TerminalRegistryTest {
 
     @BeforeEach
     void setUp() {
-        tmux = new TmuxManager();
-        registry = new TerminalRegistry(tmux);
+        tmux        = new TmuxManager();
+        registry    = new TerminalRegistry(tmux, new SessionLogger(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "trellis-test-sessions")), new io.hortora.trellis.mcp.GenerationCounter());
         sessionName = PREFIX + UUID.randomUUID().toString().substring(0, 6);
     }
 

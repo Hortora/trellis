@@ -73,6 +73,13 @@ npm start                                                  # launch app (require
 - Tab hover flyout: custom `createTabComponent` renderer with 300ms delay, data from SSE agent state cache + REST repo metadata + xterm buffer
 - Renderer tiers: WebGL (focused) → Canvas (visible) → None (hidden). `workspace-renderer-tiers.ts` has pure tier logic. WebGL budget via `trellis.webglAcquire/Release` IPC
 - Detach/reattach: `Cmd+Shift+D` detach to new window, right-click titlebar → "Attach to main window". Save-inhibit during transition
+- `quarkus-mcp-server` embedded in sidecar — 6 `@Tool` methods on `TrellisTools` CDI bean (`trellis_model`, `trellis_navigate`, `trellis_terminal`, `trellis_agent`, `trellis_lifecycle`, `trellis_workspace`)
+- MCP tool surface is stable at 6 tools — new capabilities extend the model, not the tool list
+- `ModelProvider` SPI for model tree assembly — one provider per domain (`TerminalModelProvider`, `WorkspaceModelProvider`, `UIStateModelProvider`)
+- `GenerationCounter` — monotonic counter incremented on any state mutation; included in every `trellis_model` response for freshness detection
+- `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile
+- `POST /api/model/ui-state` — frontend pushes UI state (64KB limit), sidecar serves as opaque JSON with staleness detection via `lastPushed` timestamp
+- `control:navigate` SSE topic — command convention for agent-driven UI navigation with correlation-based acknowledgment
 
 ## Project Artifacts
 

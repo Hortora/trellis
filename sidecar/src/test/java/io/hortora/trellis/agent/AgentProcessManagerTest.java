@@ -29,7 +29,7 @@ class AgentProcessManagerTest {
     void setUp() {
         tmux = mock(TmuxManager.class);
         broadcaster = mock(EventBroadcaster.class);
-        manager = new AgentProcessManager(tmux, broadcaster);
+        manager = new AgentProcessManager(tmux, broadcaster, new io.hortora.trellis.mcp.GenerationCounter());
     }
 
     @Test

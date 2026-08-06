@@ -162,7 +162,7 @@ class ActionServiceAutonomyTest {
             lmField.set(coord, stub);
             var trField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("terminalRegistry");
             trField.setAccessible(true);
-            trField.set(coord, new io.hortora.trellis.terminal.TerminalRegistry(null) {
+            trField.set(coord, new io.hortora.trellis.terminal.TerminalRegistry(null, null, new io.hortora.trellis.mcp.GenerationCounter()) {
                 @Override
                 public java.util.List<io.hortora.trellis.terminal.TerminalInfo> list() {
                     return java.util.List.of();

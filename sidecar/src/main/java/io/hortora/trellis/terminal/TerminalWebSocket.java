@@ -9,7 +9,6 @@ import io.quarkus.websockets.next.WebSocketConnection;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,6 +22,9 @@ public class TerminalWebSocket {
 
     @Inject
     TerminalRegistry registry;
+    @jakarta.inject.Inject
+    SessionLogger sessionLogger;
+
 
     private final ConcurrentHashMap<String, String> sessionNames = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> fifoPaths = new ConcurrentHashMap<>();
@@ -62,8 +64,8 @@ public class TerminalWebSocket {
             return;
         }
 
-        int cols     = parsePathInt(connection.pathParam("cols"));
-        int rows     = parsePathInt(connection.pathParam("rows"));
+        int cols = parsePathInt(connection.pathParam("cols"));
+        int rows = parsePathInt(connection.pathParam("rows"));
         var fifoPath = "/tmp/trellis-" + connection.id() + ".pipe";
 
         sessionNames.put(connection.id(), sessionName);
@@ -72,7 +74,9 @@ public class TerminalWebSocket {
         if (previous != null && !previous.id().equals(connection.id())) {
             LOG.infof("Session takeover for %s — closing previous connection %s", sessionName, previous.id());
             cleanup(previous);
-            try {previous.closeAndAwait(new io.quarkus.websockets.next.CloseReason(4001, "session-takeover"));} catch (Exception ignored) {}
+            try {
+                previous.closeAndAwait(new io.quarkus.websockets.next.CloseReason(4001, "session-takeover"));
+            } catch (Exception ignored) {}
         }
 
         try {
@@ -83,10 +87,13 @@ public class TerminalWebSocket {
             Thread.ofVirtual().name("trellis-fifo-" + sessionName).start(() -> {
                 try {
                     new FifoRelay(
-                            new FileInputStream(fifoPath),
-                            text -> connection.sendTextAndAwait(text)
+                            new java.io.FileInputStream(fifoPath),
+                            text -> {
+                                connection.sendTextAndAwait(text);
+                                sessionLogger.append(sessionName, text);
+                            }
                     ).relay();
-                } catch (IOException e) {
+                } catch (java.io.IOException e) {
                     LOG.debugf("FIFO stream ended for session %s: %s", sessionName, e.getMessage());
                 }
             });
@@ -97,7 +104,7 @@ public class TerminalWebSocket {
                 tmux.forceRedraw(sessionName, cols, rows);
             }
 
-        } catch (IOException | InterruptedException e) {
+        } catch (java.io.IOException | InterruptedException e) {
             LOG.errorf("Failed to set up pipe for session %s: %s", sessionName, e.getMessage());
             cleanup(connection);
             try {connection.closeAndAwait();} catch (Exception ignored) {}
