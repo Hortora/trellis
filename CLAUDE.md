@@ -67,7 +67,9 @@ npm start                                                  # launch app (require
 - `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
 - `GET /api/terminals` — list all terminal sessions with agent state/memory; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
 - `GET /api/protocols/repos?root=...` — list repos with `docs/protocols/INDEX.md`; `GET /api/protocols/entries?index=...` — parse INDEX.md chain; `POST/DELETE /api/protocols/entries` — add/remove with git commit
+- `GET /api/backlog` — enriched backlog from soredium's worklog DB (`~/.hortora/worklog.db`); optional `?repo=` filter; read-only connection with graceful degradation when DB absent
 - Protocol panel (`trellis-protocol-view`) — accordion repo list, garden-style entry rows, split-pane layout, garden search integration for adding entries
+- Backlog panel (`trellis-backlog-panel`) — enriched issue backlog with `pages-data-table`, client-side filtering by strategic classification, cache age indicator, trajectory detail sidebar
 - `GET/PUT /api/workspace/layout?root=...` — server-side layout persistence (browser mode fallback); `GET/PUT /api/workspace/groups?root=...` — server-side groups persistence. File-based storage under `.trellis/` in workspace root
 - Workspace view groups: saved named tab collections (templates, not live bindings). `Cmd+Shift+S` save, `Cmd+Shift+Backspace` delete, Groups tab in picker
 - Tab hover flyout: custom `createTabComponent` renderer with 300ms delay, data from SSE agent state cache + REST repo metadata + xterm buffer

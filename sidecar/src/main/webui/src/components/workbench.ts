@@ -9,6 +9,7 @@ import '../views/repo-detail';
 import '../components/coordinator-panel';
 import '../components/workspace-view';
 import '../views/protocol-view';
+import '../views/backlog-panel';
 
 interface PanelDef {
   icon: string;
@@ -25,11 +26,12 @@ const PANELS: Record<string, PanelDef> = {
   protocols:   { icon: '\u{1F4DC}', label: 'Protocols',    tag: 'trellis-protocol-view' },
   coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
   memory:      { icon: '\u{1F4CA}', label: 'Memory',       tag: 'trellis-memory-panel' },
+  backlog:     { icon: '\u{1F4CB}', label: 'Backlog',      tag: 'trellis-backlog-panel' },
   epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
   repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
 };
 
-const DOCK_PANELS = ['workspace', 'dashboard', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
+const DOCK_PANELS = ['workspace', 'dashboard', 'backlog', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -160,6 +162,8 @@ export class TrellisWorkbench extends LitElement {
       this._activePanel = 'protocols';
     } else if (hash.match(/^#memory/)) {
       this._activePanel = 'memory';
+    } else if (hash.match(/^#backlog/)) {
+      this._activePanel = 'backlog';
     } else if (hash.match(/^#workspace/)) {
       this._activePanel = 'workspace';
     } else {
