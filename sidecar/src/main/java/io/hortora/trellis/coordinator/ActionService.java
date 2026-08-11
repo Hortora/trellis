@@ -197,7 +197,20 @@ public class ActionService {
         return transition(action, status, result.detail());
     }
 
-    private final java.util.Deque<Instant> autonomousTimestamps = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    private io.casehub.platform.agent.gate.SlidingWindowStrategy actionPacing;
+    private io.casehub.platform.agent.gate.AdmissionGate actionGate;
+
+    private synchronized io.casehub.platform.agent.gate.AdmissionGate actionGate() {
+        if (actionGate == null) {
+            int maxActions = preferences != null ? preferences.rateLimitMaxActions() : 5;
+            int windowSeconds = preferences != null ? preferences.rateLimitWindowSeconds() : 60;
+            actionPacing = new io.casehub.platform.agent.gate.SlidingWindowStrategy(
+                    maxActions, java.time.Duration.ofSeconds(windowSeconds));
+            actionGate = io.casehub.platform.agent.gate.AdmissionGate.builder()
+                    .strategy(actionPacing).build();
+        }
+        return actionGate;
+    }
 
     void autoExecute(String actionId) {
         int updated = updateStatusCas(actionId, ActionStatus.PROPOSED, ActionStatus.APPROVED);
@@ -246,8 +259,7 @@ public class ActionService {
 
         var policy = autonomyResolver.resolvePolicy(action.actionType());
         if (level == AutonomyLevel.AUTONOMOUS && policy == AutonomyOverride.AUTONOMOUS) {
-            if (isWithinRateLimit()) {
-                recordAutonomousExecution();
+            if (actionGate().tryAcquire(java.time.Duration.ZERO)) {
                 autoExecute(action.id());
             } else {
                 scheduleCountdown(action);
@@ -269,26 +281,9 @@ public class ActionService {
         broadcast(withDeadline);
     }
 
-    private boolean isWithinRateLimit() {
-        pruneOldTimestamps();
-        int limit = preferences != null ? preferences.rateLimitMaxActions() : 5;
-        return autonomousTimestamps.size() < limit;
-    }
-
-    private void recordAutonomousExecution() {
-        autonomousTimestamps.addLast(Instant.now());
-    }
-
-    private void pruneOldTimestamps() {
-        int windowSeconds = preferences != null ? preferences.rateLimitWindowSeconds() : 60;
-        var cutoff        = Instant.now().minusSeconds(windowSeconds);
-        while (!autonomousTimestamps.isEmpty() && autonomousTimestamps.peekFirst().isBefore(cutoff)) {
-            autonomousTimestamps.pollFirst();
-        }
-    }
-
     public void resetRateLimit() {
-        autonomousTimestamps.clear();
+        actionGate();
+        actionPacing.clear();
     }
 
     private void persistCountdownDeadline(String actionId, Instant deadline) {
