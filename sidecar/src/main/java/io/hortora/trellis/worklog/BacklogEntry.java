@@ -1,4 +1,4 @@
-package io.hortora.trellis.backlog;
+package io.hortora.trellis.worklog;
 
 import java.util.List;
 

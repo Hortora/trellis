@@ -1,4 +1,4 @@
-package io.hortora.trellis.backlog;
+package io.hortora.trellis.worklog;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,11 +26,14 @@ public class WorklogDataSourceProducer {
 
     private DataSource dataSource;
     private boolean dbAvailable;
+    private Path    resolvedDbPath;
+
 
     @PostConstruct
     void init() {
         var resolved = dbPath.replace("${user.home}", System.getProperty("user.home"));
-        var path = Path.of(resolved);
+        var path     = Path.of(resolved);
+        this.resolvedDbPath = path;
         if (!Files.exists(path)) {
             dbAvailable = false;
             return;
@@ -38,7 +41,7 @@ public class WorklogDataSourceProducer {
         var ds = new SQLiteDataSource();
         ds.setUrl("jdbc:sqlite:file:" + path + "?mode=ro");
         ds.getConfig().setBusyTimeout(3000);
-        this.dataSource = ds;
+        this.dataSource  = ds;
         this.dbAvailable = true;
     }
 
@@ -52,4 +55,9 @@ public class WorklogDataSourceProducer {
     public boolean isDbAvailable() {
         return dbAvailable;
     }
+
+    public Path getDbPath() {
+        return resolvedDbPath;
+    }
+
 }

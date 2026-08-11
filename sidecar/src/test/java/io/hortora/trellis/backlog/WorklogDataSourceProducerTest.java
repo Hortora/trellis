@@ -1,5 +1,6 @@
 package io.hortora.trellis.backlog;
 
+import io.hortora.trellis.worklog.WorklogDataSourceProducer;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;

@@ -67,7 +67,12 @@ npm start                                                  # launch app (require
 - `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
 - `GET /api/terminals` — list all terminal sessions with agent state/memory; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
 - `GET /api/protocols/repos?root=...` — list repos with `docs/protocols/INDEX.md`; `GET /api/protocols/entries?index=...` — parse INDEX.md chain; `POST/DELETE /api/protocols/entries` — add/remove with git commit
-- `GET /api/backlog` — enriched backlog from soredium's worklog DB (`~/.hortora/worklog.db`); optional `?repo=` filter; read-only connection with graceful degradation when DB absent
+- `GET /api/backlog` — enriched backlog from soredium's worklog DB (`~/.hortora/worklog.db`); optional `?repo=` filter; delegates to `WorklogService`
+- `GET /api/worklog/events` — lifecycle events from worklog.db; optional `?since=`, `?type=`, `?limit=` filters
+- `GET /api/worklog/work-items` — active work items with issue associations; `GET /api/worklog/work-items/{branch}/timeline?repoPath=` — event timeline for a branch
+- `GET /api/worklog/slots` — slot lifecycle state; optional `?familyRoot=` filter
+- `WorklogService` — single JDBC reader for worklog.db (read-only) + `.plan` file parser. Schema version check on init, file mtime freshness detection for `GenerationCounter`, 5s summary cache
+- `WorklogModelProvider` — `ModelProvider` SPI implementation; domain `worklog`; subpaths: `events`, `work-items`, `slots`, `backlog`
 - Protocol panel (`trellis-protocol-view`) — accordion repo list, garden-style entry rows, split-pane layout, garden search integration for adding entries
 - Backlog panel (`trellis-backlog-panel`) — enriched issue backlog with `pages-data-table`, client-side filtering by strategic classification, cache age indicator, trajectory detail sidebar
 - `GET/PUT /api/workspace/layout?root=...` — server-side layout persistence (browser mode fallback); `GET/PUT /api/workspace/groups?root=...` — server-side groups persistence. File-based storage under `.trellis/` in workspace root
