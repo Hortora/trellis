@@ -1,5 +1,5 @@
 import { build, context } from "esbuild";
-import { cpSync, readFileSync } from "fs";
+import { cpSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -25,12 +25,14 @@ const isWatch = process.argv.includes("--watch");
 const options = {
   entryPoints: ["src/app.ts"],
   bundle: true,
-  outfile: "dist/app.js",
   format: "esm",
   target: "es2020",
   minify: !isWatch,
   sourcemap: isWatch,
   plugins: [rawPlugin],
+  ...(isWatch
+    ? { outfile: "dist/app.js" }
+    : { outdir: "dist", entryNames: "[name]-[hash]" }),
 };
 
 if (isWatch) {
@@ -42,3 +44,11 @@ if (isWatch) {
 }
 
 cpSync("public", "dist", { recursive: true });
+
+if (!isWatch) {
+  const files = readdirSync("dist").filter(f => f.startsWith("app-") && f.endsWith(".js"));
+  if (files.length === 1) {
+    const html = readFileSync("dist/index.html", "utf-8");
+    writeFileSync("dist/index.html", html.replace("app.js", files[0]));
+  }
+}

@@ -22,25 +22,25 @@ class TrellisLifecycleTest {
 
     @Test
     void workspaceQueryReturnsResult() {
-        var result = tools.trellisWorkspace(null, false);
+        var result = tools.trellisWorkspace(null, false, null, null);
         assertFalse(result.isError());
     }
 
     @Test
     void workspaceWithRefreshReturnsResult() {
-        var result = tools.trellisWorkspace(null, true);
+        var result = tools.trellisWorkspace(null, true, null, null);
         assertFalse(result.isError());
     }
 
     @Test
     void workspaceWithSubpathReturnsResult() {
-        var result = tools.trellisWorkspace("repos", false);
+        var result = tools.trellisWorkspace("repos", false, null, null);
         assertFalse(result.isError());
     }
 
     @Test
     void workspaceWithInvalidSubpathReturnsEmptyOrError() {
-        var result = tools.trellisWorkspace("nonexistent", false);
+        var result = tools.trellisWorkspace("nonexistent", false, null, null);
         // With no workspace watched → returns empty list (success)
         // With workspace watched → returns error for invalid subpath
         assertNotNull(result);

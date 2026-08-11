@@ -1,6 +1,5 @@
 package io.hortora.trellis.mcp;
 
-import io.quarkiverse.mcp.server.ToolResponse;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -51,7 +50,53 @@ class TrellisToolsTest {
 
     @Test
     void workspaceToolReturnsResponse() {
-        var result = tools.trellisWorkspace(null, null);
+        var result = tools.trellisWorkspace(null, null, null, null);
         assertNotNull(result);
+        assertFalse(result.isError());
     }
+
+    @Test
+    void workspaceOperationWithNoFrontendReturnsError() {
+        var result = tools.trellisWorkspace(null, null, "frame-create", "{\"tabs\":[]}");
+        assertNotNull(result);
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void workspaceReadPathUnchangedWithOperationNull() {
+        var result = tools.trellisWorkspace(null, null, null, null);
+        assertNotNull(result);
+        assertFalse(result.isError());
+    }
+
+    @Test
+    void workspaceOperationWithNullParamsDoesNotThrow() {
+        var result = tools.trellisWorkspace(null, null, "frame-pin", null);
+        assertNotNull(result);
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void scanRootRequiresRootParam() {
+        var result = tools.trellisWorkspace(null, null, "scan-root", "{}");
+        assertNotNull(result);
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void scanRootRejectsNonExistentDirectory() {
+        var result = tools.trellisWorkspace(null, null, "scan-root",
+                "{\"root\":\"/nonexistent/path/that/does/not/exist\"}");
+        assertNotNull(result);
+        assertTrue(result.isError());
+    }
+
+    @Test
+    void scanRootSucceedsForValidDirectory() {
+        var result = tools.trellisWorkspace(null, null, "scan-root",
+                "{\"root\":\"/tmp\"}");
+        assertNotNull(result);
+        assertFalse(result.isError());
+    }
+
 }

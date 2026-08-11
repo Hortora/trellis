@@ -36,6 +36,17 @@ public class WorkspaceLayoutResource {
     @Path("/layout")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response saveLayout(@QueryParam("root") String root, String body) {
+        return doSaveLayout(root, body);
+    }
+
+    @POST
+    @Path("/layout")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response saveLayoutPost(@QueryParam("root") String root, String body) {
+        return doSaveLayout(root, body);
+    }
+
+    private Response doSaveLayout(String root, String body) {
         if (root == null || root.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", "root query parameter is required"))

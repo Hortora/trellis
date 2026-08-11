@@ -23,7 +23,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class TrellisTools {
@@ -61,6 +60,29 @@ public class TrellisTools {
 
     @Inject
     EventBroadcaster broadcaster;
+
+
+    private ToolResponse dispatchFrontendCommand(String topic, Map<String, Object> payload) {
+        try {
+            if (!uiStateStore.hasFrontend()) {
+                return ToolResponse.error("no frontend connected");
+            }
+            var correlationId = UUID.randomUUID().toString();
+            var future        = uiStateStore.registerNavigation(correlationId);
+            var eventPayload  = new LinkedHashMap<>(payload);
+            eventPayload.put("correlationId", correlationId);
+            broadcaster.broadcast(topic, eventPayload);
+            try {
+                var postState = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                return ToolResponse.success(objectMapper.writeValueAsString(postState));
+            } catch (java.util.concurrent.TimeoutException e) {
+                uiStateStore.cleanupNavigation(correlationId);
+                return ToolResponse.error("timeout: " + topic);
+            }
+        } catch (Exception e) {
+            return ToolResponse.error("command failed: " + e.getMessage());
+        }
+    }
 
     @Tool(name = "trellis_model", description = "Query application state and discover available actions")
     public ToolResponse trellisModel(
@@ -107,23 +129,7 @@ public class TrellisTools {
     @Tool(name = "trellis_navigate", description = "Activate a UI element (panel, frame, tab)")
     public ToolResponse trellisNavigate(
             @ToolArg(name = "target", description = "Target model path") String target) {
-        try {
-            if (!uiStateStore.hasFrontend()) {
-                return ToolResponse.error("no frontend connected");
-            }
-            var correlationId = UUID.randomUUID().toString();
-            var future = uiStateStore.registerNavigation(correlationId);
-            broadcaster.broadcast("control:navigate", Map.of("target", target, "correlationId", correlationId));
-            try {
-                var postState = future.get(5, TimeUnit.SECONDS);
-                return ToolResponse.success(objectMapper.writeValueAsString(postState));
-            } catch (java.util.concurrent.TimeoutException e) {
-                uiStateStore.cleanupNavigation(correlationId);
-                return ToolResponse.error("navigation timeout: " + target);
-            }
-        } catch (Exception e) {
-            return ToolResponse.error("navigation failed: " + e.getMessage());
-        }
+        return dispatchFrontendCommand("control:navigate", Map.of("target", target));
     }
 
     @Tool(name = "trellis_terminal", description = "Terminal I/O (read log, send input, create, destroy)")
@@ -326,10 +332,37 @@ public class TrellisTools {
         }
     }
 
-    @Tool(name = "trellis_workspace", description = "Query workspace repos, slots, epics")
+    @Tool(name = "trellis_workspace", description = "Workspace queries and frame/tab management. Query: path + refresh. Mutate: operation + params.")
     public ToolResponse trellisWorkspace(
             @ToolArg(name = "path", description = "Workspace subpath", required = false) String path,
-            @ToolArg(name = "refresh", description = "Force fresh scan", required = false) Boolean refresh) {
+            @ToolArg(name = "refresh", description = "Force fresh scan", required = false) Boolean refresh,
+            @ToolArg(name = "operation", description = "Frame/tab operation: frame-create, frame-remove, frame-move, frame-resize, frame-pin, frame-unpin, frame-detach, frame-attach, tab-add, tab-remove, group-save, group-update, group-delete, organiser-apply, scan-root", required = false) String operation,
+            @ToolArg(name = "params", description = "JSON parameters for the operation", required = false) String params) {
+        if (operation != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                var parsedParams = params != null
+                                   ? (Map<String, Object>) objectMapper.readValue(params, Map.class)
+                                   : Map.<String, Object>of();
+                if ("scan-root".equals(operation)) {
+                    var root = (String) parsedParams.get("root");
+                    if (root == null || root.isBlank()) {
+                        return ToolResponse.error("scan-root requires params.root");
+                    }
+                    var rootPath = io.hortora.trellis.util.PathUtil.resolveRoot(root);
+                    if (!java.nio.file.Files.isDirectory(rootPath)) {
+                        return ToolResponse.error("directory not found: " + root);
+                    }
+                    fileWatcher.watch(rootPath);
+                    var model = fileWatcher.currentModel(rootPath);
+                    return ToolResponse.success(objectMapper.writeValueAsString(model));
+                }
+                return dispatchFrontendCommand("control:workspace",
+                                               Map.of("command", operation, "params", parsedParams));
+            } catch (Exception e) {
+                return ToolResponse.error("invalid params: " + e.getMessage());
+            }
+        }
         try {
             var models = fileWatcher.allModels();
             if (models.isEmpty()) {

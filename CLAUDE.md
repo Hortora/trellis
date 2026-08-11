@@ -58,9 +58,9 @@ npm start                                                  # launch app (require
 - Electron shell follows sparge pattern: find free port, spawn sidecar, poll health/ready, open window
 - `GET /api/health` — sidecar liveness; `GET /api/health/ready` — sidecar readiness (200 after TerminalRegistry bootstrap, 503 before)
 - Frontend uses a dock-bar workbench shell (`trellis-workbench`) — views are panels, not standalone hash-routed pages
-- Workspace panel (`trellis-workspace-view`) — Dockview-backed floating frames with tabbed terminals. Dashboard panel (`trellis-org-dashboard`) — organisational overview (repo cards, slots, epics)
-- Workspace view terminology: Workbench → Panel → Frame → Tab. Frames are Dockview floating groups; tabs reference terminals by name
-- Dockview (`dockview-core` v7+) for frame/tab management — vanilla TS, MIT, zero dependencies
+- Workspace panel (`trellis-workspace-view`) — delegates frame/tab state to `FloatingFrameEngine` + `DockviewBackend` from `@casehubio/pages-runtime`. Trellis provides a `ContentFactory` for terminal elements and bridges persistence format. Dashboard panel (`trellis-org-dashboard`) — organisational overview (repo cards, slots, epics)
+- Workspace view terminology: Workbench → Panel → Frame → Tab. Frames are Dockview floating groups managed by the pages-runtime engine; tabs reference terminals by name
+- Dockview (`dockview-core` v7+) consumed via pages-runtime backend — direct dep retained for shadow root CSS import only
 - New panels should use platform rendering primitives (`marked`, pages DSL, `pages-data-table`) — the artifact panel is the reference for markdown, the memory panel is the reference for tabular data
 - Tables use `pages-data-table` with `fromRows()` for data binding, custom `columnRenderers` for badges/buttons, and `mode="paginated"` for content-sized tables
 - Frontend theme: `casehub-dark` via `applyTheme()` + `pages-density-compact` class on documentElement
@@ -75,8 +75,9 @@ npm start                                                  # launch app (require
 - Tab hover flyout: custom `createTabComponent` renderer with 300ms delay, data from SSE agent state cache + REST repo metadata + xterm buffer
 - Renderer tiers: WebGL (focused) → Canvas (visible) → None (hidden). `workspace-renderer-tiers.ts` has pure tier logic. WebGL budget via `trellis.webglAcquire/Release` IPC
 - Detach/reattach: `Cmd+Shift+D` detach to new window, right-click titlebar → "Attach to main window". Save-inhibit during transition
-- `quarkus-mcp-server` embedded in sidecar — 6 `@Tool` methods on `TrellisTools` CDI bean (`trellis_model`, `trellis_navigate`, `trellis_terminal`, `trellis_agent`, `trellis_lifecycle`, `trellis_workspace`)
-- MCP tool surface is stable at 6 tools — new capabilities extend the model, not the tool list
+- `quarkus-mcp-server` embedded in sidecar — `@Tool` methods on `TrellisTools` CDI bean (`trellis_model`, `trellis_navigate`, `trellis_terminal`, `trellis_agent`, `trellis_lifecycle`, `trellis_workspace`)
+- MCP tool count follows the design — new capabilities extend existing tools or add tools as needed
+- `trellis_workspace` extended with `operation` + `params` for frame/tab management — dispatches SSE commands to frontend via `control:workspace` topic
 - `ModelProvider` SPI for model tree assembly — one provider per domain (`TerminalModelProvider`, `WorkspaceModelProvider`, `UIStateModelProvider`)
 - `GenerationCounter` — monotonic counter incremented on any state mutation; included in every `trellis_model` response for freshness detection
 - `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile

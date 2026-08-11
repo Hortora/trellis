@@ -270,13 +270,16 @@ export class TrellisWorkbench extends LitElement {
   }
 
   private _connectSSE() {
-    this._eventSource = new EventSource('/api/push?topics=control:navigate');
+    this._eventSource = new EventSource('/api/push?topics=control:navigate&topics=control:workspace');
     this._eventSource.addEventListener('message', (event: MessageEvent) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.topic === 'control:navigate' && msg.payload) {
           const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
           this._handleNavigateEvent(payload);
+        } else if (msg.topic === 'control:workspace' && msg.payload) {
+          const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+          this._handleWorkspaceCommand(payload);
         }
       } catch { /* ignore parse errors */ }
     });
@@ -287,6 +290,19 @@ export class TrellisWorkbench extends LitElement {
       this._eventSource.close();
       this._eventSource = null;
     }
+  }
+
+  private async _handleWorkspaceCommand(
+      payload: { command: string; params?: any; correlationId?: string }) {
+    this._activatePanel('workspace');
+    const wsView = this._panelCache.get('workspace');
+    if (wsView && typeof (wsView as any).handleCommand === 'function') {
+      await (wsView as any).handleCommand(payload.command, payload.params);
+    }
+    if (payload.correlationId) {
+      this._pendingCorrelationId = payload.correlationId;
+    }
+    this._pushUIStateImmediate();
   }
 
   _handleNavigateEvent(payload: { target: string; correlationId?: string }) {
@@ -305,6 +321,15 @@ export class TrellisWorkbench extends LitElement {
       const panelId = parts[0];
       if (panelId === 'workspace-view' || panelId === 'workspace') {
         this._activatePanel('workspace');
+        if (parts.length >= 3 && parts[1] === 'frames') {
+          const wsView = this._panelCache.get('workspace');
+          if (wsView && typeof (wsView as any).focusFrame === 'function') {
+            (wsView as any).focusFrame(parts[2]);
+            if (parts.length >= 5 && parts[3] === 'tabs') {
+              (wsView as any).focusTab(parts[2], parseInt(parts[4], 10));
+            }
+          }
+        }
       } else if (PANELS[panelId]) {
         this._activatePanel(panelId);
       }
