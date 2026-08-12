@@ -61,6 +61,10 @@ export class TrellisWorkspaceView extends LitElement {
   private _backdropEl: HTMLElement | null = null;
   private _pickerDismissEscape: ((e: KeyboardEvent) => void) | null = null;
   private _keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private _zoneDropdown: HTMLElement | null = null;
+  private _zoneDropdownFrameKey: string | null = null;
+  private _activePreset: string | null = null;
+  private _manualLayoutSnapshot: Map<string, { position: { x: number; y: number }; size: { width: number; height: number } }> | null = null;
 
   static override styles = [
     unsafeCSS(dockviewCSS),
@@ -102,6 +106,9 @@ export class TrellisWorkspaceView extends LitElement {
       .picker-confirm { background: #0e639c; border: none; color: #fff; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
       .picker-confirm:hover { background: #1177bb; }
       .picker-confirm:disabled { opacity: 0.4; cursor: default; }
+      .organiser-btn { cursor: pointer; border: 1px solid #475569; border-radius: 4px; background: transparent; padding: 2px 6px; color: #e2e8f0; font-size: 12px; }
+      .organiser-btn:hover { background: #334155; }
+      .organiser-btn.preset-active { background: #3b82f6; }
       .xterm { padding: 4px; }
       .xterm-viewport, .xterm-screen { background-color: #1e1e1e !important; }
     `,
@@ -137,6 +144,12 @@ export class TrellisWorkspaceView extends LitElement {
 
   private async _initEngine() {
     this._backend = await createDockviewBackend();
+    this._engine = createFloatingFrameEngine(this._backend);
+    const canvasSize = () => ({ width: this._container?.clientWidth ?? 1200, height: this._container?.clientHeight ?? 800 });
+    const extraButtons = [
+      { icon: '⊞', title: 'Snap to zone', className: 'frame-zone-picker-btn', onClick: (key: string) => this._showZonePicker(key) },
+      ...(!this._browserMode ? [{ icon: '🗗', title: 'Pop out to new window', className: 'frame-detach-btn', onClick: (key: string) => { this._focusedFrameId = key; this._detachFrame(); } }] : []),
+    ];
     const contentFactory: ContentFactory = (tab) => {
       const termEl = document.createElement('pages-component-terminal') as any;
       termEl.style.cssText = 'flex:1;overflow:hidden;';
@@ -144,10 +157,9 @@ export class TrellisWorkspaceView extends LitElement {
       this._connectTerminal(tab.key, termEl);
       return { element: termEl, dispose: () => { this._terminalElements.delete(tab.key); this._activeTerminals.delete(tab.key); this._connectedTerminals.delete(tab.key); } };
     };
-    this._backend.attach(this._container!, contentFactory);
-    this._engine = createFloatingFrameEngine(this._backend);
-    this._backend.onFrameMove((key, pos) => { this._engine?.updatePosition(key, pos); this._scheduleSave(); });
-    this._backend.onFrameResize((key, size) => { this._engine?.updateSize(key, size); this._fitTerminalsInFrame(key); this._scheduleSave(); });
+    this._backend.attach(this._container!, contentFactory, { extraButtons });
+    this._backend.onFrameMove((key, pos) => { this._engine?.updatePosition(key, pos); if (this._activePreset) this._captureManualLayout(); this._activePreset = null; this.shadowRoot?.querySelectorAll('.organiser-btn').forEach(b => (b as HTMLElement).classList.remove('preset-active')); this._scheduleSave(); });
+    this._backend.onFrameResize((key, size) => { this._engine?.updateSize(key, size); if (this._activePreset) this._captureManualLayout(); this._activePreset = null; this.shadowRoot?.querySelectorAll('.organiser-btn').forEach(b => (b as HTMLElement).classList.remove('preset-active')); this._fitTerminalsInFrame(key); this._scheduleSave(); });
     this._backend.onFrameClose((key) => this.hideFrame(key));
     this._backend.onFramePin((key) => this.togglePin(key));
     this._backend.onTabDragOut((fromFrame, tabKey, position) => {
@@ -166,6 +178,13 @@ export class TrellisWorkspaceView extends LitElement {
       <div class="workspace-toolbar">
         <button class="new-frame-btn" @click=${this._onNewFrame}>+ New Frame</button>
         <button class="frames-btn" @click=${() => this._showFramesList()}>Frames</button>
+      </div>
+      <div class="organiser-toolbar" style="display:none;padding:4px 8px;gap:4px;align-items:center;background:#1e293b;border-bottom:1px solid #475569;">
+        <button class="organiser-btn" data-preset="side-by-side" title="Side by side" @click=${() => this.applyOrganiser('side-by-side')}>⬜⬜</button>
+        <button class="organiser-btn" data-preset="stacked" title="Stacked" @click=${() => this.applyOrganiser('stacked')}>☰</button>
+        <button class="organiser-btn" data-preset="grid" title="Grid" @click=${() => this.applyOrganiser('grid')}>⊞</button>
+        <button class="organiser-btn" data-preset="main-sidebar" title="Main + Sidebar" @click=${() => this.applyOrganiser('main-sidebar')}>⬜▫</button>
+        <button class="organiser-btn" data-preset="focus" title="Focus" @click=${() => this.applyOrganiser('focus')}>◻</button>
       </div>
       <div class="dockview-container"></div>
     `;
@@ -187,6 +206,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (groupId) this._frameGroupIds.set(frameId, groupId);
     if (!this._restoring) this._focusedFrameId = frameId;
     this._scheduleSave();
+    this._updateOrganiserToolbar();
     return frameId;
   }
 
@@ -199,6 +219,7 @@ export class TrellisWorkspaceView extends LitElement {
     this._frameGroupIds.delete(frameId);
     if (this._focusedFrameId === frameId) this._focusedFrameId = null;
     this._scheduleSave();
+    this._updateOrganiserToolbar();
   }
 
   showFrame(frameId: string) {
@@ -208,6 +229,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (frame) for (const tab of frame.tabs) this._activeTerminals.add(tab.key);
     this._focusedFrameId = frameId;
     this._scheduleSave();
+    this._updateOrganiserToolbar();
   }
 
   deleteFrame(frameId: string) {
@@ -218,6 +240,7 @@ export class TrellisWorkspaceView extends LitElement {
     this._frameGroupIds.delete(frameId);
     if (this._focusedFrameId === frameId) this._focusedFrameId = null;
     this._scheduleSave();
+    this._updateOrganiserToolbar();
   }
 
   removeFrame(frameId: string) { this.hideFrame(frameId); }
@@ -242,9 +265,23 @@ export class TrellisWorkspaceView extends LitElement {
     const validPresets: Preset[] = ['side-by-side', 'stacked', 'grid', 'main-sidebar', 'focus'];
     const preset = presetName.toLowerCase().replace(/\s+/g, '-') as Preset;
     if (!validPresets.includes(preset)) return;
+    const toolbar = this.shadowRoot?.querySelector('.organiser-toolbar');
+    if (this._activePreset === preset) {
+      this._restoreManualLayout();
+      this._activePreset = null;
+      if (toolbar) toolbar.querySelectorAll('.organiser-btn').forEach(b => (b as HTMLElement).classList.remove('preset-active'));
+      return;
+    }
+    if (!this._activePreset) this._captureManualLayout();
     const r = this._container?.getBoundingClientRect() ?? { width: 1200, height: 800 };
     this._engine.applyOrganiser(preset, { width: r.width, height: r.height });
+    this._activePreset = preset;
     this._scheduleSave();
+    if (toolbar) {
+      toolbar.querySelectorAll('.organiser-btn').forEach(b => (b as HTMLElement).classList.remove('preset-active'));
+      const active = toolbar.querySelector(`[data-preset="${preset}"]`) as HTMLElement | null;
+      if (active) active.classList.add('preset-active');
+    }
   }
 
   isTerminalOpen(terminalName: string): boolean { return this._activeTerminals.has(terminalName); }
@@ -596,6 +633,82 @@ export class TrellisWorkspaceView extends LitElement {
     this._backdropEl = backdrop; this._pickerEl = picker; this.shadowRoot!.appendChild(backdrop); this.shadowRoot!.appendChild(picker);
     this._pickerDismissEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') { this._dismissPicker(); return; } const num = parseInt(e.key); if (num >= 1 && num <= presetNames.length) { this.applyOrganiser(presetNames[num - 1]); this._dismissPicker(); } };
     document.addEventListener('keydown', this._pickerDismissEscape);
+  }
+
+  private _showZonePicker(frameKey: string) {
+    if (this._zoneDropdownFrameKey === frameKey && this._zoneDropdown) { this._closeZonePicker(); return; }
+    this._closeZonePicker();
+    if (!this._engine || !this._backend) return;
+    const frame = this._engine.frames.get(frameKey);
+    if (!frame) return;
+    this._zoneDropdownFrameKey = frameKey;
+    const zones: Array<{ zone: string; label: string; col: number; row: number }> = [
+      { zone: 'top-left', label: '↖', col: 1, row: 1 }, { zone: 'top', label: '↑', col: 2, row: 1 }, { zone: 'top-right', label: '↗', col: 3, row: 1 },
+      { zone: 'left', label: '←', col: 1, row: 2 }, { zone: 'full', label: '⊞', col: 2, row: 2 }, { zone: 'right', label: '→', col: 3, row: 2 },
+      { zone: 'bottom-left', label: '↙', col: 1, row: 3 }, { zone: 'bottom', label: '↓', col: 2, row: 3 }, { zone: 'bottom-right', label: '↘', col: 3, row: 3 },
+    ];
+    const dropdown = document.createElement('div');
+    dropdown.className = 'frame-zone-dropdown';
+    dropdown.style.cssText = 'position:absolute;z-index:99999;pointer-events:auto;display:grid;grid-template-columns:repeat(3,28px);grid-template-rows:repeat(3,28px);gap:2px;padding:6px;background:#1e293b;border:1px solid #475569;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+    const cs = { width: this._container?.clientWidth ?? 1200, height: this._container?.clientHeight ?? 800 };
+    for (const z of zones) {
+      const cell = document.createElement('button');
+      cell.title = z.zone; cell.textContent = z.label;
+      const isActive = (frame as any).snappedZone === z.zone;
+      cell.style.cssText = `grid-column:${z.col};grid-row:${z.row};border:1px solid #475569;border-radius:2px;background:${isActive ? '#3b82f6' : '#334155'};color:#e2e8f0;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0;`;
+      cell.addEventListener('mouseenter', () => { cell.style.background = '#3b82f6'; });
+      cell.addEventListener('mouseleave', () => { cell.style.background = (frame as any).snappedZone === z.zone ? '#3b82f6' : '#334155'; });
+      cell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if ((frame as any).snappedZone === z.zone) this._engine!.unsnapFrame(frameKey);
+        else this._engine!.snapFrame(frameKey, z.zone as any, cs);
+        this._scheduleSave(); this._closeZonePicker();
+      });
+      dropdown.appendChild(cell);
+    }
+    const el = this._backend.getFrameElement(frameKey);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const containerRect = this._container!.getBoundingClientRect();
+      dropdown.style.left = `${rect.left - containerRect.left}px`;
+      dropdown.style.top = `${rect.top - containerRect.top + 24}px`;
+    }
+    this._container!.appendChild(dropdown);
+    this._zoneDropdown = dropdown;
+    const onClickOutside = (e: Event) => { if (!dropdown.contains(e.target as Node)) { this._closeZonePicker(); document.removeEventListener('click', onClickOutside, true); } };
+    requestAnimationFrame(() => document.addEventListener('click', onClickOutside, true));
+  }
+
+  private _closeZonePicker() {
+    if (this._zoneDropdown) { this._zoneDropdown.remove(); this._zoneDropdown = null; this._zoneDropdownFrameKey = null; }
+  }
+
+  private _captureManualLayout() {
+    if (!this._engine) return;
+    this._manualLayoutSnapshot = new Map();
+    for (const [key, frame] of this._engine.frames) {
+      if (!frame.hidden) this._manualLayoutSnapshot.set(key, { position: { ...frame.position }, size: { ...frame.size } });
+    }
+  }
+
+  private _restoreManualLayout() {
+    if (!this._engine || !this._manualLayoutSnapshot) return;
+    for (const [key, layout] of this._manualLayoutSnapshot) {
+      if (this._engine.frames.has(key)) {
+        this._engine.updatePosition(key, layout.position);
+        this._engine.updateSize(key, layout.size);
+        this._backend?.updatePosition(key, layout.position);
+        this._backend?.updateSize(key, layout.size);
+      }
+    }
+    this._scheduleSave();
+  }
+
+  private _updateOrganiserToolbar() {
+    const toolbar = this.shadowRoot?.querySelector('.organiser-toolbar') as HTMLElement | null;
+    if (!toolbar || !this._engine) return;
+    const visibleCount = [...this._engine.frames.values()].filter(f => !f.hidden).length;
+    toolbar.style.display = visibleCount > 1 ? 'flex' : 'none';
   }
 
   private _showFramesList() {
