@@ -340,7 +340,7 @@ export class TrellisRepoDetail extends LitElement {
           agent: {},
         }),
       });
-      if (!res.ok) {
+      if (!res.ok && res.status !== 409) {
         const body = await res.json().catch(() => null);
         this._error = body?.error ?? `Failed to create terminal: HTTP ${res.status}`;
         return;

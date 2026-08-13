@@ -504,6 +504,63 @@ describe('serialization round-trip', () => {
     const frame = layout.frames.find((f: any) => f.id === frameId);
     expect(frame.pinned).toBe(true);
   });
+
+  it('includes fontSize in serialized layout when set', () => {
+    const frameId = (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
+    (el as any)._frameFontSizes.set(frameId, 15);
+    const layout = (el as any)._serializeLayout();
+    const frame = layout.frames.find((f: any) => f.id === frameId);
+    expect(frame.fontSize).toBe(15);
+  });
+
+  it('omits fontSize when not set', () => {
+    (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
+    const layout = (el as any)._serializeLayout();
+    expect(layout.frames[0].fontSize).toBeUndefined();
+  });
+});
+
+describe('font size', () => {
+  let el: InstanceType<typeof TrellisWorkspaceView>;
+
+  beforeEach(async () => { el = await createEl(); });
+  afterEach(() => { el.remove(); });
+
+  it('restores fontSize from persisted layout', () => {
+    const frameId = (el as any).createFrame(
+      [{ terminalName: 'repo-a', type: 'repo' }],
+      undefined, undefined,
+      { id: 'f-1', fontSize: 18, order: 0, position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 1, pinned: false, tabs: [], activeTabIndex: 0 },
+    );
+    expect((el as any)._frameFontSizes.get(frameId)).toBe(18);
+  });
+
+  it('cycleFontSize advances through preset sizes', () => {
+    const frameId = (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
+    expect((el as any)._frameFontSizes.get(frameId)).toBeUndefined();
+    (el as any)._cycleFontSize(frameId);
+    expect((el as any)._frameFontSizes.get(frameId)).toBe(15);
+    (el as any)._cycleFontSize(frameId);
+    expect((el as any)._frameFontSizes.get(frameId)).toBe(18);
+    (el as any)._cycleFontSize(frameId);
+    expect((el as any)._frameFontSizes.get(frameId)).toBe(11);
+    (el as any)._cycleFontSize(frameId);
+    expect((el as any)._frameFontSizes.get(frameId)).toBe(13);
+  });
+
+  it('deleteFrame cleans up font size', () => {
+    const frameId = (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
+    (el as any)._frameFontSizes.set(frameId, 15);
+    (el as any).deleteFrame(frameId);
+    expect((el as any)._frameFontSizes.has(frameId)).toBe(false);
+  });
+
+  it('frameForTerminal finds the correct frame', () => {
+    const f1 = (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
+    (el as any).createFrame([{ terminalName: 'repo-b', type: 'repo' }]);
+    expect((el as any)._frameForTerminal('repo-a')).toBe(f1);
+    expect((el as any)._frameForTerminal('repo-z')).toBeUndefined();
+  });
 });
 
 describe('flyout data assembly', () => {

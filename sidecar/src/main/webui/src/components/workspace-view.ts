@@ -23,6 +23,7 @@ interface FrameLayout {
   id: string; groupId?: string; order: number;
   position: { x: number; y: number }; size: { width: number; height: number };
   zIndex: number; pinned: boolean; tabs: TabRef[]; activeTabIndex: number;
+  fontSize?: number;
 }
 
 interface Group { id: string; name: string; tabs: TabRef[]; }
@@ -32,12 +33,16 @@ interface ShellLayout {
   isMain: boolean; frames: FrameLayout[]; lastActiveFrameId?: string;
 }
 
+const FONT_SIZES = [11, 13, 15, 18] as const;
+const DEFAULT_FONT_SIZE = 13;
+
 @customElement('trellis-workspace-view')
 export class TrellisWorkspaceView extends LitElement {
   @property() workspaceRoot = '';
 
   private _container: HTMLDivElement | null = null;
   private _activeTerminals = new Set<string>();
+  private _frameFontSizes = new Map<string, number>();
   private _lastCommandResult: { ok: boolean; error?: string; frameId?: string } | null = null;
   private _frameGroupIds = new Map<string, string>();
   private _focusedFrameId: string | null = null;
@@ -109,6 +114,7 @@ export class TrellisWorkspaceView extends LitElement {
       .organiser-btn { cursor: pointer; border: 1px solid #475569; border-radius: 4px; background: transparent; padding: 2px 6px; color: #e2e8f0; font-size: 12px; }
       .organiser-btn:hover { background: #334155; }
       .organiser-btn.preset-active { background: #3b82f6; }
+      .frame-font-size-btn { font-size: 10px !important; min-width: 20px; font-family: monospace; }
       .xterm { padding: 4px; }
       .xterm-viewport, .xterm-screen { background-color: #1e1e1e !important; }
     `,
@@ -147,6 +153,7 @@ export class TrellisWorkspaceView extends LitElement {
     this._engine = createFloatingFrameEngine(this._backend);
     const canvasSize = () => ({ width: this._container?.clientWidth ?? 1200, height: this._container?.clientHeight ?? 800 });
     const extraButtons = [
+      { icon: 'A', title: 'Font size', className: 'frame-font-size-btn', onClick: (key: string) => this._cycleFontSize(key) },
       { icon: '⊞', title: 'Snap to zone', className: 'frame-zone-picker-btn', onClick: (key: string) => this._showZonePicker(key) },
       ...(!this._browserMode ? [{ icon: '🗗', title: 'Pop out to new window', className: 'frame-detach-btn', onClick: (key: string) => { this._focusedFrameId = key; this._detachFrame(); } }] : []),
     ];
@@ -203,6 +210,7 @@ export class TrellisWorkspaceView extends LitElement {
     const position = restore?.position ? clampPosition(restore.position, { width: fw, height: fh }, { width: cw, height: ch }) : nextFramePosition({ width: cw, height: ch }, { width: fw, height: fh }, existingPos);
     this._engine.createFrame({ key: frameId, tabs: validTabs.map(toFrameTabConfig), position, size: { width: fw, height: fh }, pinned: restore?.pinned ?? false });
     for (const tab of validTabs) this._activeTerminals.add(tab.terminalName);
+    if (restore?.fontSize) this._frameFontSizes.set(frameId, restore.fontSize);
     if (groupId) this._frameGroupIds.set(frameId, groupId);
     if (!this._restoring) this._focusedFrameId = frameId;
     this._scheduleSave();
@@ -238,6 +246,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (frame) for (const tab of frame.tabs) this._activeTerminals.delete(tab.key);
     this._engine.removeFrame(frameId);
     this._frameGroupIds.delete(frameId);
+    this._frameFontSizes.delete(frameId);
     if (this._focusedFrameId === frameId) this._focusedFrameId = null;
     this._scheduleSave();
     this._updateOrganiserToolbar();
@@ -683,6 +692,46 @@ export class TrellisWorkspaceView extends LitElement {
     if (this._zoneDropdown) { this._zoneDropdown.remove(); this._zoneDropdown = null; this._zoneDropdownFrameKey = null; }
   }
 
+  private _frameForTerminal(terminalName: string): string | undefined {
+    if (!this._engine) return undefined;
+    for (const [key, frame] of this._engine.frames) {
+      if (frame.tabs.some(t => t.key === terminalName)) return key;
+    }
+    return undefined;
+  }
+
+  private _cycleFontSize(frameKey: string) {
+    const current = this._frameFontSizes.get(frameKey) ?? DEFAULT_FONT_SIZE;
+    const idx = FONT_SIZES.indexOf(current as typeof FONT_SIZES[number]);
+    const next = FONT_SIZES[(idx + 1) % FONT_SIZES.length];
+    this._frameFontSizes.set(frameKey, next);
+    this._applyFontSizeToFrame(frameKey, next);
+    this._updateFontSizeButton(frameKey, next);
+    this._scheduleSave();
+  }
+
+  private _applyFontSizeToFrame(frameKey: string, fontSize: number) {
+    if (!this._engine) return;
+    const frame = this._engine.frames.get(frameKey);
+    if (!frame) return;
+    for (const tab of frame.tabs) {
+      const el = this._terminalElements.get(tab.key) as any;
+      if (el?.terminal) {
+        el.terminal.options.fontSize = fontSize;
+        if (typeof el.fit === 'function') el.fit();
+      }
+    }
+    setTimeout(() => this._fitTerminalsInFrame(frameKey), 100);
+  }
+
+  private _updateFontSizeButton(frameKey: string, fontSize: number) {
+    if (!this._backend) return;
+    const frameEl = this._backend.getFrameElement(frameKey);
+    if (!frameEl) return;
+    const btn = frameEl.querySelector('.frame-font-size-btn');
+    if (btn) btn.textContent = String(fontSize);
+  }
+
   private _captureManualLayout() {
     if (!this._engine) return;
     this._manualLayoutSnapshot = new Map();
@@ -773,7 +822,9 @@ export class TrellisWorkspaceView extends LitElement {
     if (typeof terminalEl.configure !== 'function') { if (retries > 0) setTimeout(() => this._connectTerminal(terminalName, terminalEl, retries - 1, delay), delay); return; }
     this._connectedTerminals.add(terminalName);
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    terminalEl.configure({ wsUrl: `${proto}//${location.host}/ws/terminal/${terminalName}/{cols}/{rows}`, theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad' }, fontSize: 13, fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" });
+    const frameKey = this._frameForTerminal(terminalName);
+    const fontSize = (frameKey && this._frameFontSizes.get(frameKey)) || DEFAULT_FONT_SIZE;
+    terminalEl.configure({ wsUrl: `${proto}//${location.host}/ws/terminal/${terminalName}/{cols}/{rows}`, theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad' }, fontSize, fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" });
     setTimeout(() => { if (typeof terminalEl.fit === 'function') terminalEl.fit(); const term = terminalEl.terminal; if (term) { fetch(`/api/terminals/${terminalName}/resize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cols: term.cols ?? 80, rows: term.rows ?? 24 }) }).catch(() => {}); } }, 500);
   }
 
@@ -886,7 +937,7 @@ export class TrellisWorkspaceView extends LitElement {
       id: 'shell-1',
       bounds: { x: 0, y: 0, width: this._container?.clientWidth ?? 1200, height: this._container?.clientHeight ?? 800 },
       isMain: true,
-      frames: engineFrames.map(f => ({ id: f.key, groupId: this._frameGroupIds.get(f.key), order: f.order, position: f.position, size: f.size, zIndex: f.zIndex, pinned: f.pinned, tabs: f.tabs.map(toTabRef), activeTabIndex: Math.max(0, f.tabs.findIndex(t => t.key === f.activeTabKey)) })),
+      frames: engineFrames.map(f => ({ id: f.key, groupId: this._frameGroupIds.get(f.key), order: f.order, position: f.position, size: f.size, zIndex: f.zIndex, pinned: f.pinned, tabs: f.tabs.map(toTabRef), activeTabIndex: Math.max(0, f.tabs.findIndex(t => t.key === f.activeTabKey)), fontSize: this._frameFontSizes.get(f.key) })),
       lastActiveFrameId: this._focusedFrameId ?? undefined,
     };
   }
@@ -902,6 +953,7 @@ export class TrellisWorkspaceView extends LitElement {
     this._restoring = true;
     try { for (const frame of shell.frames.sort((a: FrameLayout, b: FrameLayout) => a.order - b.order)) { if (frame.tabs?.length > 0) this.createFrame(frame.tabs, frame.groupId, undefined, frame); } } finally { this._restoring = false; }
     if (shell.lastActiveFrameId) this._focusedFrameId = shell.lastActiveFrameId;
+    requestAnimationFrame(() => { for (const [key, size] of this._frameFontSizes) this._updateFontSizeButton(key, size); });
   }
 
   async handleCommand(command: string, params?: any): Promise<{ ok: boolean; error?: string; frameId?: string }> {
