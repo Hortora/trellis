@@ -441,8 +441,8 @@ describe('REST persistence fallback', () => {
     globalThis.fetch = vi.fn((url: string, opts?: any) => {
       const method = opts?.method || 'GET';
       fetchCalls.push({ url, method, body: opts?.body });
-      if (typeof url === 'string' && url.includes('/api/workspace/layout') && method === 'GET') return Promise.resolve(new Response(JSON.stringify({ windows: [{ id: 'shell-1', isMain: true, frames: [] }] })));
-      if (typeof url === 'string' && url.includes('/api/workspace/groups') && method === 'GET') return Promise.resolve(new Response(JSON.stringify({ groups: [] })));
+      if (typeof url === 'string' && url.includes('/api/layouts/workspace-frames') && method === 'GET') return Promise.resolve(new Response(JSON.stringify({ windows: [{ id: 'shell-1', isMain: true, frames: [] }] })));
+      if (typeof url === 'string' && url.includes('/api/layouts/workspace-groups') && method === 'GET') return Promise.resolve(new Response(JSON.stringify({ groups: [] })));
       if (method === 'PUT') return Promise.resolve(new Response(null, { status: 204 }));
       return Promise.resolve(new Response('{}'));
     }) as any;
@@ -460,7 +460,7 @@ describe('REST persistence fallback', () => {
     (el as any).createFrame([{ terminalName: 'repo-a', type: 'repo' }]);
     (el as any)._doSave();
     await new Promise(r => setTimeout(r, 50));
-    const putCalls = fetchCalls.filter(c => c.url.includes('/api/workspace/layout') && c.method === 'PUT');
+    const putCalls = fetchCalls.filter(c => c.url.includes('/api/layouts/workspace-frames') && c.method === 'PUT');
     expect(putCalls.length).toBeGreaterThanOrEqual(1);
     const body = JSON.parse(putCalls[0].body!);
     expect(body.windows[0].frames.length).toBe(1);

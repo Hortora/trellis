@@ -465,7 +465,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (!this.workspaceRoot) return [];
     const trellis = (window as any).trellis;
     if (trellis?.loadGroups) { const data = await trellis.loadGroups(this.workspaceRoot); return data?.groups || []; }
-    try { const resp = await fetch('/api/workspace/groups?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) { const data = await resp.json(); return data?.groups || []; } } catch { /* non-critical */ }
+    try { const resp = await fetch('/api/layouts/workspace-groups?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) { const data = await resp.json(); return data?.groups || []; } } catch { /* non-critical */ }
     return [];
   }
 
@@ -473,7 +473,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (!this.workspaceRoot) return { groups: [] };
     const trellis = (window as any).trellis;
     if (trellis?.loadGroups) return (await trellis.loadGroups(this.workspaceRoot)) || { groups: [] };
-    try { const resp = await fetch('/api/workspace/groups?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) return await resp.json(); } catch { /* non-critical */ }
+    try { const resp = await fetch('/api/layouts/workspace-groups?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) return await resp.json(); } catch { /* non-critical */ }
     return { groups: [] };
   }
 
@@ -481,7 +481,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (!this.workspaceRoot) return;
     const trellis = (window as any).trellis;
     if (trellis?.saveGroups) { await trellis.saveGroups(this.workspaceRoot, data); return; }
-    try { await fetch('/api/workspace/groups?root=' + encodeURIComponent(this.workspaceRoot), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch { /* non-critical */ }
+    try { await fetch('/api/layouts/workspace-groups?root=' + encodeURIComponent(this.workspaceRoot), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch { /* non-critical */ }
   }
 
   private async _saveFrameAsGroup(name: string): Promise<void> {
@@ -927,7 +927,7 @@ export class TrellisWorkspaceView extends LitElement {
     if (this._saveMaxWaitTimer) { clearTimeout(this._saveMaxWaitTimer); this._saveMaxWaitTimer = null; }
     const layout = this._serializeLayout(); const trellis = (window as any).trellis;
     if (trellis?.saveWindowLayout) { trellis.saveWindowLayout(layout); }
-    else if (this._browserMode && this.workspaceRoot) { fetch(`/api/workspace/layout?root=${encodeURIComponent(this.workspaceRoot)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ windows: [layout] }), keepalive: true }).catch(() => {}); }
+    else if (this._browserMode && this.workspaceRoot) { fetch(`/api/layouts/workspace-frames?root=${encodeURIComponent(this.workspaceRoot)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ windows: [layout] }), keepalive: true }).catch(() => {}); }
   }
 
   private _serializeLayout(): ShellLayout {
@@ -946,7 +946,7 @@ export class TrellisWorkspaceView extends LitElement {
     let persisted: any = null;
     const trellis = (window as any).trellis;
     if (trellis?.getLastWorkspacePath) { const wp = await trellis.getLastWorkspacePath(); if (!wp) return; persisted = await trellis.loadLayout(wp); }
-    else if (this.workspaceRoot) { try { const resp = await fetch('/api/workspace/layout?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) persisted = await resp.json(); } catch { /* non-critical */ } }
+    else if (this.workspaceRoot) { try { const resp = await fetch('/api/layouts/workspace-frames?root=' + encodeURIComponent(this.workspaceRoot)); if (resp.ok) persisted = await resp.json(); } catch { /* non-critical */ } }
     if (!persisted?.windows) return;
     const shell = persisted.windows.find((w: ShellLayout) => w.isMain) || persisted.windows[0];
     if (!shell?.frames) return;

@@ -57,7 +57,7 @@ npm start                                                  # launch app (require
 - Pages/blocks-ui consumed as Maven SNAPSHOT artifacts via portal: resolutions
 - Electron shell follows sparge pattern: find free port, spawn sidecar, poll health/ready, open window
 - `GET /api/health` — sidecar liveness; `GET /api/health/ready` — sidecar readiness (200 after TerminalRegistry bootstrap, 503 before)
-- Frontend uses a dock-bar workbench shell (`trellis-workbench`) — views are panels, not standalone hash-routed pages
+- Frontend uses a dock-bar workbench shell (`trellis-workbench`) — two-layer architecture: `dockWorkbench()` from pages-ui for dock bars with `ZoneLayoutEngine` for drag rearrangement, `Container` from pages-runtime frame-sandbox for pluggable content area (supports content/tabbed/split/free layout modes). Panels defined in `workbench-panels.ts`
 - Workspace panel (`trellis-workspace-view`) — delegates frame/tab state to `FloatingFrameEngine` + `DockviewBackend` from `@casehubio/pages-runtime`. Trellis provides a `ContentFactory` for terminal elements and bridges persistence format. Dashboard panel (`trellis-org-dashboard`) — organisational overview (repo cards, slots, epics)
 - Workspace view terminology: Workbench → Panel → Frame → Tab. Frames are Dockview floating groups managed by the pages-runtime engine; tabs reference terminals by name
 - Dockview (`dockview-core` v7+) consumed via pages-runtime backend — direct dep retained for shadow root CSS import only
@@ -75,7 +75,7 @@ npm start                                                  # launch app (require
 - `WorklogModelProvider` — `ModelProvider` SPI implementation; domain `worklog`; subpaths: `events`, `work-items`, `slots`, `backlog`
 - Protocol panel (`trellis-protocol-view`) — accordion repo list, garden-style entry rows, split-pane layout, garden search integration for adding entries
 - Backlog panel (`trellis-backlog-panel`) — enriched issue backlog with `pages-data-table`, client-side filtering by strategic classification, cache age indicator, trajectory detail sidebar
-- `GET/PUT /api/workspace/layout?root=...` — server-side layout persistence (browser mode fallback); `GET/PUT /api/workspace/groups?root=...` — server-side groups persistence. File-based storage under `.trellis/` in workspace root
+- `GET/PUT/DELETE /api/layouts/{key}?root=...` — key-based layout persistence via `LayoutResource`. File-based storage under `.trellis/layouts/{key}.json` in workspace root. Keys: `workbench` (dock bar + content area state), `workspace-frames` (Dockview frame positions), `workspace-groups` (saved tab collections)
 - Workspace view groups: saved named tab collections (templates, not live bindings). `Cmd+Shift+S` save, `Cmd+Shift+Backspace` delete, Groups tab in picker
 - Tab hover flyout: custom `createTabComponent` renderer with 300ms delay, data from SSE agent state cache + REST repo metadata + xterm buffer
 - Renderer tiers: WebGL (focused) → Canvas (visible) → None (hidden). `workspace-renderer-tiers.ts` has pure tier logic. WebGL budget via `trellis.webglAcquire/Release` IPC

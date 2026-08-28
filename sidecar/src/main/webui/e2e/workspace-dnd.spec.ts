@@ -41,7 +41,7 @@ async function getActiveTabIndex(page: Page, frameId: string) {
 
 async function clearLayout(page: Page) {
   await page.request.put(
-    '/api/workspace/layout?root=/Users/mdproctor/claude/hortora/trellis',
+    '/api/layouts/workspace-frames?root=/Users/mdproctor/claude/hortora/trellis',
     { data: { windows: [] } },
   );
 }

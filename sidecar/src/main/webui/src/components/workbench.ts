@@ -1,37 +1,19 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import '../views/org-dashboard';
-import '../views/slot-detail';
-import '../views/epic-dashboard';
-import '../views/garden-view';
-import '../views/artifact-panel';
-import '../views/repo-detail';
-import '../components/coordinator-panel';
-import '../components/workspace-view';
-import '../views/protocol-view';
-import '../views/backlog-panel';
+import { customElement, property } from 'lit/decorators.js';
+import { dockWorkbench } from '@casehubio/pages-ui/dist/dsl/builders.js';
+import { renderComponent } from '@casehubio/pages-component';
+import type { LayoutState } from '@casehubio/pages-component';
+import { createZoneLayoutEngine } from '@casehubio/pages-runtime';
+import type { ZoneLayoutEngine } from '@casehubio/pages-runtime';
+import { attachDockDrag } from '@casehubio/pages-runtime/dist/dock-drag.js';
+import { createContainer, createContainerToolbar } from '@casehubio/pages-runtime/dist/frame-sandbox';
+import type { Container, ContainerToolbar, Layout } from '@casehubio/pages-runtime/dist/frame-sandbox';
+import { DOCK_PANELS, PANEL_TAGS, registerAllPanels, createPanelFactory } from './workbench-panels.js';
 
-interface PanelDef {
-  icon: string;
-  label: string;
-  tag: string;
-}
+registerAllPanels();
 
-const PANELS: Record<string, PanelDef> = {
-  workspace:   { icon: '\u{2B1A}', label: 'Workspace',   tag: 'trellis-workspace-view' },
-  dashboard:   { icon: '\u{1F4C1}', label: 'Dashboard',   tag: 'trellis-org-dashboard' },
-  slot:        { icon: '\u{1F4CB}', label: 'Slot',         tag: 'trellis-slot-detail' },
-  artifacts:   { icon: '\u{1F4C4}', label: 'Artifacts',    tag: 'trellis-artifact-panel' },
-  garden:      { icon: '\u{1F33F}', label: 'Garden',       tag: 'trellis-garden-view' },
-  protocols:   { icon: '\u{1F4DC}', label: 'Protocols',    tag: 'trellis-protocol-view' },
-  coordinator: { icon: '\u{1F916}', label: 'Coordinator',  tag: 'trellis-coordinator-panel' },
-  memory:      { icon: '\u{1F4CA}', label: 'Memory',       tag: 'trellis-memory-panel' },
-  backlog:     { icon: '\u{1F4CB}', label: 'Backlog',      tag: 'trellis-backlog-panel' },
-  epic:        { icon: '⚡',    label: 'Epic',          tag: 'trellis-epic-dashboard' },
-  repo:        { icon: '\u{1F4E6}', label: 'Repo',         tag: 'trellis-repo-detail' },
-};
-
-const DOCK_PANELS = ['workspace', 'dashboard', 'backlog', 'artifacts', 'garden', 'protocols', 'coordinator', 'memory'];
+const ALLOWED_LAYOUTS: readonly Layout[] = ['content', 'tabbed', 'splith', 'splitv'];
+const LAYOUT_STORE_KEY = 'workbench';
 
 @customElement('trellis-workbench')
 export class TrellisWorkbench extends LitElement {
@@ -40,65 +22,25 @@ export class TrellisWorkbench extends LitElement {
 
   @property() workspaceRoot = '';
 
-  @state() private _activePanel = 'workspace';
-  @state() private _panelContext: Record<string, string> = {};
-
-  private _panelCache = new Map<string, HTMLElement>();
+  private _container: Container | null = null;
+  private _toolbar: ContainerToolbar | null = null;
+  private _engine: ZoneLayoutEngine | null = null;
+  private _rendered = false;
   private _lastRoot = '';
-  private _lastHash = new Map<string, string>();
-  private _pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _pushMaxWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private _eventSource: EventSource | null = null;
   private _pendingCorrelationId: string | null = null;
+  private _saveDebounce: ReturnType<typeof setTimeout> | null = null;
 
   static override styles = css`
     :host {
-      display: flex;
+      display: block;
       height: 100%;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-
-    .dock-bar {
-      display: flex;
-      flex-direction: column;
-      width: 48px;
-      background: #141414;
-      border-right: 1px solid #333;
-      padding: 4px 0;
-      flex-shrink: 0;
-    }
-
-    .dock-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 48px;
-      height: 44px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      font-size: 18px;
-      border-left: 2px solid transparent;
-      transition: background 0.15s;
-    }
-
-    .dock-btn:hover { background: #222; }
-    .dock-btn[data-active] {
-      background: #1e1e1e;
-      border-left-color: #3b82f6;
-    }
-
-    .panel-area {
-      flex: 1;
-      overflow: hidden;
-      background: #1e1e1e;
-    }
-
-    .panel-area > * {
       width: 100%;
+    }
+    .workbench-root {
       height: 100%;
-      box-sizing: border-box;
+      width: 100%;
     }
   `;
 
@@ -115,125 +57,150 @@ export class TrellisWorkbench extends LitElement {
     window.removeEventListener('hashchange', this._onHashChange);
     this._stopHeartbeat();
     this._disconnectSSE();
+    this._container?.dispose();
+    this._container = null;
+    this._toolbar?.dispose();
+    this._toolbar = null;
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
-    if (changed.has('workspaceRoot') && this._lastRoot && this._lastRoot !== this.workspaceRoot) {
-      this._panelCache.forEach(el => el.remove());
-      this._panelCache.clear();
+    if (changed.has('workspaceRoot') && this._lastRoot !== this.workspaceRoot) {
+      this._lastRoot = this.workspaceRoot;
+      this._rendered = false;
+      this._container?.dispose();
+      this._container = null;
+      this._toolbar?.dispose();
+      this._toolbar = null;
     }
-    this._lastRoot = this.workspaceRoot;
+    if (!this._rendered && this.workspaceRoot) {
+      this._initWorkbench();
+      this._rendered = true;
+    }
+  }
+
+  private async _initWorkbench() {
+    const root = this.shadowRoot!.querySelector('.workbench-root');
+    if (!root) return;
+    root.innerHTML = '';
+
+    const savedState = await this._loadLayout();
+    const factory = createPanelFactory(this.workspaceRoot);
+
+    const dockConfig = {
+      centre: { type: 'html' as const, props: { id: '__dock-centre' } },
+      left: DOCK_PANELS,
+      storageKey: LAYOUT_STORE_KEY,
+    };
+    const config = dockWorkbench(dockConfig);
+    this._engine = createZoneLayoutEngine(dockConfig, savedState?.zones);
+
+    renderComponent(config, root as HTMLElement);
+
+    const siteRoot = root as HTMLElement;
+    const buttons = siteRoot.querySelectorAll<HTMLElement>('button[data-dock-panel-id]');
+    for (const btn of buttons) {
+      attachDockDrag(btn, this._engine, siteRoot);
+    }
+
+    siteRoot.addEventListener('pages-dock-rearrange', ((e: CustomEvent) => {
+      const { panelKey, toZone, insertIndex } = e.detail;
+      this._engine?.movePanel(panelKey, toZone, insertIndex);
+      this._scheduleSave();
+    }) as EventListener);
+
+    const centreMount = root.querySelector('#__dock-centre');
+    if (!centreMount) return;
+
+    const activeLayout = (savedState?.containerState?.layout as Layout) ?? 'content';
+
+    this._toolbar = createContainerToolbar(ALLOWED_LAYOUTS, activeLayout, {
+      onAdd: () => {},
+      onLayoutChange: (type: Layout) => {
+        this._container?.setLayout(type);
+        this._scheduleSave();
+        this._pushUIStateImmediate();
+      },
+    });
+    centreMount.insertAdjacentElement('afterbegin', this._toolbar.element);
+
+    this._container = createContainer({
+      entries: [{ key: 'workspace', label: 'Workspace' }],
+      layout: activeLayout,
+      contentFactory: factory,
+      callbacks: {
+        onStateChange: () => {
+          this._scheduleSave();
+          this._pushUIStateImmediate();
+        },
+      },
+    });
+    this._container.mount(centreMount as HTMLElement);
+  }
+
+  private async _loadLayout(): Promise<LayoutState | null> {
+    try {
+      const resp = await fetch(`/api/layouts/${LAYOUT_STORE_KEY}?root=${encodeURIComponent(this.workspaceRoot)}`);
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch { return null; }
+  }
+
+  private _scheduleSave() {
+    if (this._saveDebounce) clearTimeout(this._saveDebounce);
+    this._saveDebounce = setTimeout(() => this._saveLayout(), 500);
+  }
+
+  private _saveLayout() {
+    const state: LayoutState = {
+      splits: {},
+      docks: {},
+      panels: {},
+      zones: this._engine ? Object.fromEntries(this._engine.zoneMap) : undefined,
+      containerState: this._container ? { layout: this._container.organiser.type as Layout, tabs: [] } : undefined,
+    };
+    fetch(`/api/layouts/${LAYOUT_STORE_KEY}?root=${encodeURIComponent(this.workspaceRoot)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+      keepalive: true,
+    }).catch(() => {});
   }
 
   private _onHashChange = () => { this._parseHash(); };
 
   private _parseHash() {
     const hash = location.hash;
-    const ctx: Record<string, string> = {};
 
     const rootMatch = hash.match(/[?&]root=([^&]+)/);
     if (rootMatch) {
       this.workspaceRoot = decodeURIComponent(rootMatch[1]);
     }
 
-    if (hash.match(/^#slot\/(\d+)/)) {
-      const m = hash.match(/^#slot\/(\d+)/)!;
-      this._activePanel = 'slot';
-      ctx['slotNumber'] = m[1];
-    } else if (hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)) {
-      const m = hash.match(/^#epic\/([^/]+)\/([^/]+)\/(\d+)/)!;
-      this._activePanel = 'epic';
-      ctx['owner'] = m[1];
-      ctx['repo'] = m[2];
-      ctx['epicNumber'] = m[3];
-    } else if (hash.match(/^#repo\/([^?]+)/)) {
-      const m = hash.match(/^#repo\/([^?]+)/)!;
-      this._activePanel = 'repo';
-      ctx['repoName'] = decodeURIComponent(m[1]);
-    } else if (hash.match(/^#coordinator/)) {
-      this._activePanel = 'coordinator';
-      const epicParam = hash.match(/[?&]epic=([^&]+)/);
-      if (epicParam) ctx['epicRef'] = decodeURIComponent(epicParam[1]);
-    } else if (hash.match(/^#artifacts/)) {
-      this._activePanel = 'artifacts';
-    } else if (hash.match(/^#garden/)) {
-      this._activePanel = 'garden';
-    } else if (hash.match(/^#protocols/)) {
-      this._activePanel = 'protocols';
-    } else if (hash.match(/^#memory/)) {
-      this._activePanel = 'memory';
-    } else if (hash.match(/^#backlog/)) {
-      this._activePanel = 'backlog';
-    } else if (hash.match(/^#workspace/)) {
-      this._activePanel = 'workspace';
-    } else {
-      this._activePanel = 'dashboard';
-    }
-
-    this._panelContext = ctx;
-    this._lastHash.set(this._activePanel, hash);
-    if (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo') {
-      this._lastHash.set('dashboard', hash);
+    const panelMatch = hash.match(/^#([a-z]+)/);
+    if (panelMatch && PANEL_TAGS[panelMatch[1]]) {
+      this._activatePanel(panelMatch[1]);
+    } else if (!hash || hash === '#') {
+      this._activatePanel('workspace');
     }
   }
 
-  private _activatePanel(id: string) {
-    const saved = this._lastHash.get(id);
-    if (saved) {
-      location.hash = saved;
-    } else {
-      const root = this.workspaceRoot ? `root=${encodeURIComponent(this.workspaceRoot)}` : '';
-      if (id === 'dashboard') {
-        location.hash = `#?${root}`;
-      } else {
-        location.hash = `#${id}?${root}`;
-      }
+  private _activatePanel(key: string) {
+    if (PANEL_TAGS[key]) {
+      const root = this.shadowRoot!.querySelector('.workbench-root');
+      const target = root?.querySelector(`[data-component-id="${key}"]`) ?? root;
+      target?.dispatchEvent(new CustomEvent('pages-dock-toggle', {
+        bubbles: true, composed: true,
+        detail: { panelId: key, visible: true },
+      }));
     }
     this._pushUIStateImmediate();
   }
 
-  private _getOrCreatePanel(id: string): HTMLElement | null {
-    const def = PANELS[id];
-    if (!def) return null;
-
-    let el = this._panelCache.get(id);
-    if (!el) {
-      el = document.createElement(def.tag);
-      this._panelCache.set(id, el);
-    }
-    this._applyContext(el, id);
-    return el;
-  }
-
-  private _applyContext(el: HTMLElement, panelId: string) {
-    const ctx = this._panelContext;
-    (el as any).workspaceRoot = this.workspaceRoot;
-    if (panelId === 'slot' && ctx['slotNumber']) {
-      (el as any).slotNumber = parseInt(ctx['slotNumber']);
-    }
-    if (panelId === 'epic') {
-      (el as any).owner = ctx['owner'] ?? '';
-      (el as any).repo = ctx['repo'] ?? '';
-      (el as any).epicNumber = parseInt(ctx['epicNumber'] ?? '0');
-    }
-    if (panelId === 'coordinator' && ctx['epicRef']) {
-      (el as any).epicRef = ctx['epicRef'];
-    }
-    if (panelId === 'repo' && ctx['repoName']) {
-      (el as any).repoName = ctx['repoName'];
-    }
-  }
-
   private _buildUIState(): Record<string, unknown> {
-    const panels: Record<string, unknown> = {};
-    for (const [id, el] of this._panelCache) {
-      panels[id] = {
-        visible: id === this._activePanel,
-        content: typeof (el as any).getUIState === 'function' ? (el as any).getUIState() : {},
-        lastPushed: Date.now(),
-      };
-    }
-    const state: Record<string, unknown> = { activePanel: this._activePanel, panels };
+    const state: Record<string, unknown> = {
+      layoutMode: this._container?.organiser?.type ?? 'content',
+      visiblePanels: this._container?.entries.map(e => e.key) ?? [],
+    };
     if (this._pendingCorrelationId) {
       state['correlationId'] = this._pendingCorrelationId;
       this._pendingCorrelationId = null;
@@ -242,14 +209,6 @@ export class TrellisWorkbench extends LitElement {
   }
 
   private _pushUIStateImmediate() {
-    if (this._pushDebounceTimer) clearTimeout(this._pushDebounceTimer);
-    if (this._pushMaxWaitTimer) clearTimeout(this._pushMaxWaitTimer);
-    this._pushDebounceTimer = null;
-    this._pushMaxWaitTimer = null;
-    this._doPushUIState();
-  }
-
-  private _doPushUIState() {
     const state = this._buildUIState();
     fetch('/api/model/ui-state', {
       method: 'POST',
@@ -259,7 +218,7 @@ export class TrellisWorkbench extends LitElement {
   }
 
   private _startHeartbeat() {
-    this._heartbeatInterval = setInterval(() => this._doPushUIState(), 15000);
+    this._heartbeatInterval = setInterval(() => this._pushUIStateImmediate(), 15000);
   }
 
   private _stopHeartbeat() {
@@ -292,70 +251,41 @@ export class TrellisWorkbench extends LitElement {
     }
   }
 
-  private async _handleWorkspaceCommand(
-      payload: { command: string; params?: any; correlationId?: string }) {
-    this._activatePanel('workspace');
-    const wsView = this._panelCache.get('workspace');
-    if (wsView && typeof (wsView as any).handleCommand === 'function') {
-      await (wsView as any).handleCommand(payload.command, payload.params);
-    }
-    if (payload.correlationId) {
-      this._pendingCorrelationId = payload.correlationId;
+  _handleNavigateEvent(payload: { target: string; correlationId?: string }) {
+    const { target, correlationId } = payload;
+    if (correlationId) this._pendingCorrelationId = correlationId;
+
+    if (target.startsWith('dock-bar/')) {
+      this._activatePanel(target.substring('dock-bar/'.length));
+    } else if (target.startsWith('panels/')) {
+      const parts = target.substring('panels/'.length).split('/');
+      const panelId = parts[0] === 'workspace-view' ? 'workspace' : parts[0];
+      this._activatePanel(panelId);
+      if (panelId === 'workspace' && parts.length >= 3 && parts[1] === 'frames') {
+        const wsEl = this.shadowRoot!.querySelector('trellis-workspace-view');
+        if (wsEl && typeof (wsEl as any).focusFrame === 'function') {
+          (wsEl as any).focusFrame(parts[2]);
+          if (parts.length >= 5 && parts[3] === 'tabs') {
+            (wsEl as any).focusTab(parts[2], parseInt(parts[4], 10));
+          }
+        }
+      }
     }
     this._pushUIStateImmediate();
   }
 
-  _handleNavigateEvent(payload: { target: string; correlationId?: string }) {
-    const { target, correlationId } = payload;
-    if (correlationId) {
-      this._pendingCorrelationId = correlationId;
+  private async _handleWorkspaceCommand(
+      payload: { command: string; params?: any; correlationId?: string }) {
+    this._activatePanel('workspace');
+    const wsView = this.shadowRoot!.querySelector('trellis-workspace-view');
+    if (wsView && typeof (wsView as any).handleCommand === 'function') {
+      await (wsView as any).handleCommand(payload.command, payload.params);
     }
-
-    if (target.startsWith('dock-bar/')) {
-      const panelId = target.substring('dock-bar/'.length);
-      if (PANELS[panelId]) {
-        this._activatePanel(panelId);
-      }
-    } else if (target.startsWith('panels/')) {
-      const parts = target.substring('panels/'.length).split('/');
-      const panelId = parts[0];
-      if (panelId === 'workspace-view' || panelId === 'workspace') {
-        this._activatePanel('workspace');
-        if (parts.length >= 3 && parts[1] === 'frames') {
-          const wsView = this._panelCache.get('workspace');
-          if (wsView && typeof (wsView as any).focusFrame === 'function') {
-            (wsView as any).focusFrame(parts[2]);
-            if (parts.length >= 5 && parts[3] === 'tabs') {
-              (wsView as any).focusTab(parts[2], parseInt(parts[4], 10));
-            }
-          }
-        }
-      } else if (PANELS[panelId]) {
-        this._activatePanel(panelId);
-      }
-    }
-
+    if (payload.correlationId) this._pendingCorrelationId = payload.correlationId;
     this._pushUIStateImmediate();
   }
 
   override render() {
-    this._getOrCreatePanel(this._activePanel);
-    return html`
-      <div class="dock-bar">
-        ${DOCK_PANELS.map(id => { const def = PANELS[id]; const isActive = id === this._activePanel || (id === 'dashboard' && (this._activePanel === 'slot' || this._activePanel === 'epic' || this._activePanel === 'repo')); return html`
-          <button class="dock-btn"
-                  title=${def.label}
-                  ?data-active=${isActive}
-                  @click=${() => this._activatePanel(id)}>
-            ${def.icon}
-          </button>
-        `;})}
-      </div>
-      <div class="panel-area">
-        ${[...this._panelCache.entries()].map(([id, el]) =>
-          html`<div style="display:${id === this._activePanel ? 'contents' : 'none'}">${el}</div>`
-        )}
-      </div>
-    `;
+    return html`<div class="workbench-root"></div>`;
   }
 }
