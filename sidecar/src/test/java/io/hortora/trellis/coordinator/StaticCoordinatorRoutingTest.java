@@ -16,7 +16,7 @@ class StaticCoordinatorRoutingTest {
         var task = new CoordinatorTask(CoordinatorTask.TaskType.CONVERSATIONAL, 1000, 5, 3, "ws1");
         var context = new RoutingContext<>("test", List.of(), task);
 
-        var decision = routing.route(context).await().indefinitely();
+        var decision = routing.route(context);
         assertInstanceOf(RoutingDecision.Selected.class, decision);
     }
 
@@ -26,7 +26,7 @@ class StaticCoordinatorRoutingTest {
         var task = new CoordinatorTask(CoordinatorTask.TaskType.PROACTIVE_ADVICE, 500, 3, 0, "ws1");
         var context = new RoutingContext<>("test", List.of(), task);
 
-        var decision = (RoutingDecision.Selected) routing.route(context).await().indefinitely();
+        var decision = (RoutingDecision.Selected) routing.route(context);
         assertEquals("static-l1", decision.reason());
     }
 
@@ -36,7 +36,7 @@ class StaticCoordinatorRoutingTest {
         for (var type : CoordinatorTask.TaskType.values()) {
             var task = new CoordinatorTask(type, 100, 1, 0, "ws1");
             var context = new RoutingContext<>("test", List.of(), task);
-            var decision = routing.route(context).await().indefinitely();
+            var decision = routing.route(context);
             assertInstanceOf(RoutingDecision.Selected.class, decision);
         }
     }

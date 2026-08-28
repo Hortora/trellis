@@ -12,7 +12,7 @@ import java.util.List;
 public class StaticCoordinatorRouting implements RoutingStrategy<CoordinatorTask> {
 
     @Override
-    public Uni<RoutingDecision> route(RoutingContext<CoordinatorTask> context) {
-        return Uni.createFrom().item(new RoutingDecision.Selected(List.of(), "static-l1"));
+    public RoutingDecision route(RoutingContext<CoordinatorTask> context) {
+        return new RoutingDecision.Selected(List.of(), "static-l1");
     }
 }
