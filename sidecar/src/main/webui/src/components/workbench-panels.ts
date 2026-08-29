@@ -13,6 +13,7 @@ import '../components/coordinator-panel.js';
 import '../components/workspace-view.js';
 import '../views/protocol-view.js';
 import '../views/backlog-panel.js';
+import '../views/intelligence-panel.js';
 
 export const PANEL_TAGS: Record<string, string> = {
   workspace:   'trellis-workspace-view',
@@ -26,6 +27,7 @@ export const PANEL_TAGS: Record<string, string> = {
   backlog:     'trellis-backlog-panel',
   epic:        'trellis-epic-dashboard',
   repo:        'trellis-repo-detail',
+  intelligence:'trellis-intelligence-panel',
 };
 
 export function registerAllPanels(): void {
@@ -53,4 +55,5 @@ export const DOCK_PANELS: DockPanelConfig[] = [
   { key: 'protocols',   label: 'Protocols',    icon: '\u{1F4DC}', content: hostPanel('protocols') },
   { key: 'coordinator', label: 'Coordinator',  icon: '\u{1F916}', content: hostPanel('coordinator') },
   { key: 'memory',      label: 'Memory',       icon: '\u{1F4CA}', content: hostPanel('memory') },
+  { key: 'intelligence',label: 'Intelligence', icon: '\u{1F50D}', content: hostPanel('intelligence') },
 ];

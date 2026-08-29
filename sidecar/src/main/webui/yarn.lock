@@ -51,7 +51,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-component@portal:./.casehub-packages/packages/pages-component::locator=trellis-webui%40workspace%3A."
   dependencies:
-    "@casehubio/pages-data": "workspace:*"
+    "@casehubio/pages-data": "npm:0.2.3"
   languageName: node
   linkType: soft
 
@@ -76,13 +76,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-runtime@portal:./.casehub-packages/packages/pages-runtime::locator=trellis-webui%40workspace%3A."
   dependencies:
-    "@casehubio/pages-component": "workspace:*"
-    "@casehubio/pages-data": "workspace:*"
-    "@casehubio/pages-table": "workspace:*"
-    "@casehubio/pages-ui": "workspace:*"
-    "@casehubio/pages-ui-components": "workspace:*"
-    "@casehubio/pages-ui-tokens": "workspace:*"
-    "@casehubio/pages-viz": "workspace:*"
+    "@casehubio/pages-component": "npm:0.2.3"
+    "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-table": "npm:0.2.3"
+    "@casehubio/pages-ui": "npm:0.2.3"
+    "@casehubio/pages-ui-components": "npm:0.2.3"
+    "@casehubio/pages-ui-tokens": "npm:0.3.0"
+    "@casehubio/pages-viz": "npm:0.2.3"
     js-yaml: "npm:^4.1.0"
     marked: "npm:^15.0.0"
   languageName: node
@@ -92,9 +92,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-table@portal:./.casehub-packages/packages/pages-table::locator=trellis-webui%40workspace%3A."
   dependencies:
-    "@casehubio/pages-component": "workspace:*"
-    "@casehubio/pages-data": "workspace:*"
-    "@casehubio/pages-primitives": "workspace:*"
+    "@casehubio/pages-component": "npm:0.2.3"
+    "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-primitives": "npm:0.2.3"
     lit: "npm:^3.0.0"
   languageName: node
   linkType: soft
@@ -121,8 +121,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-ui@portal:./.casehub-packages/packages/pages-ui::locator=trellis-webui%40workspace%3A."
   dependencies:
-    "@casehubio/pages-component": "workspace:*"
-    "@casehubio/pages-data": "workspace:*"
+    "@casehubio/pages-component": "npm:0.2.3"
+    "@casehubio/pages-data": "npm:0.2.3"
     zod: "npm:^3.23.0"
   languageName: node
   linkType: soft
@@ -131,9 +131,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-viz@portal:./.casehub-packages/packages/pages-viz::locator=trellis-webui%40workspace%3A."
   dependencies:
-    "@casehubio/pages-component": "workspace:*"
-    "@casehubio/pages-data": "workspace:*"
-    "@casehubio/pages-ui-components": "workspace:*"
+    "@casehubio/pages-component": "npm:0.2.3"
+    "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-ui-components": "npm:0.2.3"
     "@drdreo/heatmap": "npm:^1.4.1"
     echarts: "npm:^5.6.0"
     lit: "npm:^3.3.3"

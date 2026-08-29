@@ -83,7 +83,10 @@ npm start                                                  # launch app (require
 - `quarkus-mcp-server` embedded in sidecar — `@Tool` methods on `TrellisTools` CDI bean (`trellis_model`, `trellis_navigate`, `trellis_terminal`, `trellis_agent`, `trellis_lifecycle`, `trellis_workspace`)
 - MCP tool count follows the design — new capabilities extend existing tools or add tools as needed
 - `trellis_workspace` extended with `operation` + `params` for frame/tab management — dispatches SSE commands to frontend via `control:workspace` topic
-- `ModelProvider` SPI for model tree assembly — one provider per domain (`TerminalModelProvider`, `WorkspaceModelProvider`, `UIStateModelProvider`)
+- `ModelProvider` SPI for model tree assembly — one provider per domain (`TerminalModelProvider`, `WorkspaceModelProvider`, `UIStateModelProvider`, `WorkIntelligenceModelProvider`)
+- `GET /api/intelligence?root=...` — work intelligence findings (stalled, unblocked, deferred, cross-repo); delegates to `WorkIntelligenceModelProvider`
+- Intelligence panel (`trellis-intelligence-panel`) — RAS-based work intelligence with four archetype facets (stalled-work, unblocked-work, forgotten-deferral, cross-repo-dependency); findings from `WorkIntelligenceModelProvider` domain `intelligence`, severity-grouped display
+- `casehub-ras-api` + `casehub-ras` + `casehub-ras-persistence-memory` — RAS framework dependencies for work intelligence; `JavaSwitchGanglion` subclasses registered via `IntelligenceSituationProvider` CDI bean
 - `GenerationCounter` — monotonic counter incremented on any state mutation; included in every `trellis_model` response for freshness detection
 - `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile
 - `POST /api/model/ui-state` — frontend pushes UI state (64KB limit), sidecar serves as opaque JSON with staleness detection via `lastPushed` timestamp
