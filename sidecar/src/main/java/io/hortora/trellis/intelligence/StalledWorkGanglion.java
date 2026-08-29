@@ -5,10 +5,12 @@ import io.casehub.ras.api.DetectionResult;
 import io.casehub.ras.api.JavaSwitchGanglion;
 import io.casehub.ras.api.SituationContext;
 import io.cloudevents.CloudEvent;
+import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Map;
 import java.util.Set;
 
+@ApplicationScoped
 public class StalledWorkGanglion extends JavaSwitchGanglion {
 
     static final int ATTENTION_THRESHOLD_DAYS = 7;

@@ -6,9 +6,12 @@ import io.casehub.ras.api.JavaSwitchGanglion;
 import io.casehub.ras.api.SituationContext;
 import io.cloudevents.CloudEvent;
 
+import jakarta.enterprise.context.ApplicationScoped;
+
 import java.util.Map;
 import java.util.Set;
 
+@ApplicationScoped
 public class ForgottenDeferralGanglion extends JavaSwitchGanglion {
 
     static final int STALE_THRESHOLD_DAYS = 14;

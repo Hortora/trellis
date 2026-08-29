@@ -6,10 +6,13 @@ import io.casehub.ras.api.JavaSwitchGanglion;
 import io.casehub.ras.api.SituationContext;
 import io.cloudevents.CloudEvent;
 
+import jakarta.enterprise.context.ApplicationScoped;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@ApplicationScoped
 public class CrossRepoDependencyGanglion extends JavaSwitchGanglion {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
