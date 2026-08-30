@@ -278,6 +278,32 @@ public class WorklogService {
         return results;
     }
 
+    public List<io.hortora.trellis.dependencies.IssueDependencyData> issueDependencyData(List<String> repos) {
+        if (!dbAvailable || repos.isEmpty()) {return List.of();}
+        checkFreshness();
+        var placeholders = String.join(",", repos.stream().map(r -> "?").toList());
+        var sql          = "SELECT issue_number, issue_repo, title, state, body FROM github_issue_cache WHERE issue_repo IN (" + placeholders + ")";
+        var results      = new ArrayList<io.hortora.trellis.dependencies.IssueDependencyData>();
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement(sql)) {
+            for (int i = 0; i < repos.size(); i++) {
+                stmt.setString(i + 1, repos.get(i));
+            }
+            try (var rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(new io.hortora.trellis.dependencies.IssueDependencyData(
+                            rs.getInt("issue_number"), rs.getString("issue_repo"),
+                            rs.getString("title"), rs.getString("state"), rs.getString("body")));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warning("worklog query failed (issueDependencyData): " + e.getMessage());
+            return List.of();
+        }
+        return results;
+    }
+
+
     public PlanState planPosition(Path workspaceRoot) {
         if (workspaceRoot == null) return null;
         var planFile = workspaceRoot.resolve("design/.plan");

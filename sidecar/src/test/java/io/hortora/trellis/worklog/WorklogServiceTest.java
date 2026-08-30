@@ -12,7 +12,12 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorklogServiceTest {
 
@@ -21,11 +26,12 @@ class WorklogServiceTest {
 
     private WorklogService service;
     private GenerationCounter generation;
+    private SQLiteDataSource ds;
 
     @BeforeEach
     void setUp() throws SQLException {
         var dbPath = tmpDir.resolve("test-worklog.db");
-        var ds = new SQLiteDataSource();
+        ds = new SQLiteDataSource();
         ds.setUrl("jdbc:sqlite:" + dbPath);
 
         try (var conn = ds.getConnection()) {
@@ -263,4 +269,54 @@ class WorklogServiceTest {
         assertNotNull(s.latestEvent());
         assertEquals(1, s.slotsActive());
     }
+
+
+    @Test
+    void issueDependencyDataReturnsAllStatesForRepos() {
+        var data = service.issueDependencyData(List.of("Test/repo"));
+        assertEquals(2, data.size());
+        var open = data.stream().filter(d -> d.issueNumber() == 10).findFirst().orElseThrow();
+        assertEquals("OPEN", open.state());
+        assertEquals("Test/repo", open.issueRepo());
+        var closed = data.stream().filter(d -> d.issueNumber() == 11).findFirst().orElseThrow();
+        assertEquals("CLOSED", closed.state());
+    }
+
+    @Test
+    void issueDependencyDataFiltersByRepo() {
+        var data = service.issueDependencyData(List.of("Nonexistent/repo"));
+        assertEquals(0, data.size());
+    }
+
+    @Test
+    void issueDependencyDataIncludesBody() throws java.sql.SQLException {
+        try (var conn = ds.getConnection()) {
+            conn.createStatement().execute(
+                    "UPDATE github_issue_cache SET body = 'blocked by #11' WHERE issue_number = 10");
+        }
+        var data = service.issueDependencyData(List.of("Test/repo"));
+        var open = data.stream().filter(d -> d.issueNumber() == 10).findFirst().orElseThrow();
+        assertEquals("blocked by #11", open.body());
+    }
+
+    @Test
+    void issueDependencyDataIncludesTitle() {
+        var data = service.issueDependencyData(List.of("Test/repo"));
+        var open = data.stream().filter(d -> d.issueNumber() == 10).findFirst().orElseThrow();
+        assertEquals("Open issue", open.title());
+    }
+
+    @Test
+    void issueDependencyDataReturnsEmptyWhenDbUnavailable() {
+        service.dbAvailable = false;
+        var data = service.issueDependencyData(List.of("Test/repo"));
+        assertEquals(0, data.size());
+    }
+
+    @Test
+    void issueDependencyDataReturnsEmptyForEmptyRepoList() {
+        var data = service.issueDependencyData(List.of());
+        assertEquals(0, data.size());
+    }
+
 }

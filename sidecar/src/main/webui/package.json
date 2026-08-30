@@ -38,7 +38,8 @@
     "@casehubio/blocks-ui-core": "portal:./.casehub-packages/packages/blocks-ui-core",
     "@casehubio/blocks-ui-kpi-metric-row": "portal:./.casehub-packages/packages/kpi-metric-row",
     "@casehubio/blocks-ui-blocks-timeline": "portal:./.casehub-packages/packages/blocks-timeline",
-    "@casehubio/pages-component-terminal": "portal:./.casehub-packages/packages/pages-component-terminal"
+    "@casehubio/pages-component-terminal": "portal:./.casehub-packages/packages/pages-component-terminal",
+    "@casehubio/pages-filter-bar": "portal:./.casehub-packages/packages/pages-filter-bar"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

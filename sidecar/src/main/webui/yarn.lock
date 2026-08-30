@@ -23,6 +23,7 @@ __metadata:
     "@casehubio/pages-component": "npm:*"
     "@casehubio/pages-data": "npm:*"
     "@casehubio/pages-primitives": "npm:*"
+    "@casehubio/pages-ui-components": "npm:*"
     "@casehubio/pages-ui-tokens": "npm:*"
     lit: "npm:^3.3.3"
   languageName: node
@@ -61,6 +62,16 @@ __metadata:
   dependencies:
     jsonata: "npm:^2.2.1"
     zod: "npm:^3.23.0"
+  languageName: node
+  linkType: soft
+
+"@casehubio/pages-filter-bar@portal:./.casehub-packages/packages/pages-filter-bar::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/pages-filter-bar@portal:./.casehub-packages/packages/pages-filter-bar::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-ui-tokens": "npm:0.3.0"
+    lit: "npm:^3.0.0"
   languageName: node
   linkType: soft
 
@@ -103,6 +114,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-ui-components@portal:./.casehub-packages/packages/pages-ui-components::locator=trellis-webui%40workspace%3A."
   dependencies:
+    "@casehubio/pages-component": "npm:0.2.3"
+    "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-filter-bar": "npm:0.1.0"
+    "@casehubio/pages-primitives": "npm:0.2.3"
+    "@casehubio/pages-table": "npm:0.2.3"
     lit: "npm:^3.3.3"
   languageName: node
   linkType: soft
