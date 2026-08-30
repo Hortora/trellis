@@ -14,6 +14,7 @@ import '../components/workspace-view.js';
 import '../views/protocol-view.js';
 import '../views/backlog-panel.js';
 import '../views/intelligence-panel.js';
+import '../views/blockers-panel.js';
 
 export const PANEL_TAGS: Record<string, string> = {
   workspace:   'trellis-workspace-view',
@@ -28,6 +29,7 @@ export const PANEL_TAGS: Record<string, string> = {
   epic:        'trellis-epic-dashboard',
   repo:        'trellis-repo-detail',
   intelligence:'trellis-intelligence-panel',
+  blockers:    'trellis-blockers-panel',
 };
 
 export function registerAllPanels(): void {
@@ -56,4 +58,5 @@ export const DOCK_PANELS: DockPanelConfig[] = [
   { key: 'coordinator', label: 'Coordinator',  icon: '\u{1F916}', content: hostPanel('coordinator') },
   { key: 'memory',      label: 'Memory',       icon: '\u{1F4CA}', content: hostPanel('memory') },
   { key: 'intelligence',label: 'Intelligence', icon: '\u{1F50D}', content: hostPanel('intelligence') },
+  { key: 'blockers',     label: 'Blockers',     icon: '\u{1F6A7}', content: hostPanel('blockers') },
 ];

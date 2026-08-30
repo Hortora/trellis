@@ -2,7 +2,8 @@ package io.hortora.trellis.dependencies;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DependencyParserTest {
 
@@ -117,4 +118,36 @@ class DependencyParserTest {
             "blocked by #11 and #22");
         assertEquals(2, edges.size());
     }
+
+
+    @Test
+    void parsesBoldMarkdownBlockedBy() {
+        var edges = DependencyParser.parseEdges(16, "Hortora/trellis",
+                                                "**Blocked by:** #15");
+        assertEquals(1, edges.size());
+        assertEquals(new IssueRef(15, "Hortora/trellis"), edges.getFirst().blocker());
+    }
+
+    @Test
+    void parsesBoldMarkdownDependsOn() {
+        var edges = DependencyParser.parseEdges(16, "Hortora/trellis",
+                                                "**Depends on:** #11");
+        assertEquals(1, edges.size());
+        assertEquals(new IssueRef(11, "Hortora/trellis"), edges.getFirst().blocker());
+    }
+
+
+    @Test
+    void parsesInlineBlocks() {
+        var edges = DependencyParser.parseEdges(11, "Hortora/trellis",
+                                                "This blocks #42 and #55");
+        assertEquals(2, edges.size());
+        assertTrue(edges.stream().anyMatch(e ->
+                                                   e.blocked().equals(new IssueRef(42, "Hortora/trellis")) &&
+                                                   e.blocker().equals(new IssueRef(11, "Hortora/trellis"))));
+        assertTrue(edges.stream().anyMatch(e ->
+                                                   e.blocked().equals(new IssueRef(55, "Hortora/trellis")) &&
+                                                   e.blocker().equals(new IssueRef(11, "Hortora/trellis"))));
+    }
+
 }

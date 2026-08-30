@@ -8,7 +8,9 @@ import java.util.regex.Pattern;
 public final class DependencyParser {
 
     private static final Pattern INLINE_BLOCKED_BY = Pattern.compile(
-        "(?i)(?:blocked\\s+by|depends\\s+on)\\s+(.+?)(?:\\.|$|\\n)", Pattern.MULTILINE);
+        "(?i)\\*{0,2}(?:blocked\\s+by|depends\\s+on):?\\*{0,2}:?\\s+(.+?)(?:\\.|$|\\n)", Pattern.MULTILINE);
+    private static final Pattern INLINE_BLOCKS = Pattern.compile(
+        "(?i)\\*{0,2}blocks:?\\*{0,2}:?\\s+(.+?)(?:\\.|$|\\n)", Pattern.MULTILINE);
     private static final Pattern ISSUE_REF = Pattern.compile(
         "(?:([\\w.-]+/[\\w.-]+))?#(\\d+)");
     private static final Pattern SECTION_HEADER = Pattern.compile(
@@ -32,7 +34,7 @@ public final class DependencyParser {
         return List.copyOf(seen);
     }
 
-    private static void parseInlineRefs(String body, IssueRef blocked, LinkedHashSet<DependencyEdge> edges) {
+    private static void parseInlineRefs(String body, IssueRef blocker, LinkedHashSet<DependencyEdge> edges) {
         for (String line : body.split("\n")) {
             String trimmed = line.trim();
             if (trimmed.startsWith("- [")) continue;
@@ -42,9 +44,19 @@ public final class DependencyParser {
                 String fragment = m.group(1);
                 Matcher refs = ISSUE_REF.matcher(fragment);
                 while (refs.find()) {
-                    String repo = refs.group(1) != null ? refs.group(1) : blocked.repo();
+                    String repo = refs.group(1) != null ? refs.group(1) : blocker.repo();
                     int number = Integer.parseInt(refs.group(2));
-                    edges.add(new DependencyEdge(blocked, new IssueRef(number, repo)));
+                    edges.add(new DependencyEdge(blocker, new IssueRef(number, repo)));
+                }
+            }
+            Matcher mb = INLINE_BLOCKS.matcher(trimmed);
+            while (mb.find()) {
+                String fragment = mb.group(1);
+                Matcher refs = ISSUE_REF.matcher(fragment);
+                while (refs.find()) {
+                    String repo = refs.group(1) != null ? refs.group(1) : blocker.repo();
+                    int number = Integer.parseInt(refs.group(2));
+                    edges.add(new DependencyEdge(new IssueRef(number, repo), blocker));
                 }
             }
         }

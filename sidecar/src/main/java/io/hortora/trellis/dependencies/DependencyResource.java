@@ -43,12 +43,21 @@ public class DependencyResource {
         result.put("clear", graph.grouped()
             .getOrDefault(IssueStatus.CLEAR, List.of()).stream()
             .map(n -> nodeToMap(n, graph)).toList());
+        var nodeRefs = graph.nodes().stream().map(DependencyNode::ref).collect(java.util.stream.Collectors.toSet());
+        var externalRefs = graph.edges().stream()
+            .flatMap(e -> java.util.stream.Stream.of(e.blocked(), e.blocker()))
+            .filter(ref -> !nodeRefs.contains(ref) && "EXTERNAL".equals(graph.issueStates().getOrDefault(ref, "EXTERNAL")))
+            .distinct()
+            .map(ref -> Map.<String, Object>of("number", ref.number(), "repo", ref.repo(), "state", "EXTERNAL"))
+            .toList();
+        result.put("external", externalRefs);
         result.put("stats", Map.of(
             "totalIssues", graph.nodes().size(),
             "blocked", graph.grouped().getOrDefault(IssueStatus.BLOCKED, List.of()).size(),
             "unblocked", graph.grouped().getOrDefault(IssueStatus.UNBLOCKED, List.of()).size(),
             "clear", graph.grouped().getOrDefault(IssueStatus.CLEAR, List.of()).size(),
-            "criticalPathDepth", graph.criticalPath().size()));
+            "criticalPathDepth", graph.criticalPath().size(),
+            "externalRefs", externalRefs.size()));
         return Response.ok(result).build();
     }
 

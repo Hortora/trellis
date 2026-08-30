@@ -6,7 +6,7 @@ describe('workbench-panels', () => {
     registerAllPanels();
   });
 
-  it('PANEL_TAGS maps all 11 panel keys to tag names', () => {
+  it('PANEL_TAGS maps all panel keys to tag names', () => {
     const keys = Object.keys(PANEL_TAGS);
     expect(keys).toContain('workspace');
     expect(keys).toContain('dashboard');
@@ -19,7 +19,9 @@ describe('workbench-panels', () => {
     expect(keys).toContain('slot');
     expect(keys).toContain('epic');
     expect(keys).toContain('repo');
-    expect(keys.length).toBe(11);
+    expect(keys).toContain('intelligence');
+    expect(keys).toContain('blockers');
+    expect(keys.length).toBe(13);
   });
 
   it('ContentFactory creates element with correct tag', () => {

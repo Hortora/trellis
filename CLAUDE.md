@@ -87,6 +87,10 @@ npm start                                                  # launch app (require
 - `GET /api/intelligence?root=...` — work intelligence findings (stalled, unblocked, deferred, cross-repo); delegates to `WorkIntelligenceModelProvider`
 - Intelligence panel (`trellis-intelligence-panel`) — RAS-based work intelligence with four archetype facets (stalled-work, unblocked-work, forgotten-deferral, cross-repo-dependency); findings from `WorkIntelligenceModelProvider` domain `intelligence`, severity-grouped display
 - `casehub-ras-api` + `casehub-ras` + `casehub-ras-persistence-memory` — RAS framework dependencies for work intelligence; `JavaSwitchGanglion` subclasses registered via `IntelligenceSituationProvider` CDI bean
+- `DependencyService` — builds in-memory dependency graph from `github_issue_cache` bodies, caches with `GenerationCounter`, scopes to workspace repos via `FileWatcherService`
+- `DependencyParser` — extracts blocking relationships from issue bodies (inline `blocked by #N`/`depends on #N` refs, `## Blocked by`/`## Dependencies` sections, epic checklist annotations)
+- `GET /api/dependencies?root=...` — dependency graph with blocked/unblocked/clear classification and critical path; delegates to `DependencyService`
+- Blockers panel (`trellis-blockers-panel`) — three-column kanban view (Blocked/Unblocked/Clear) with critical path banner, scoped to workspace repos
 - `GenerationCounter` — monotonic counter incremented on any state mutation; included in every `trellis_model` response for freshness detection
 - `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile
 - `POST /api/model/ui-state` — frontend pushes UI state (64KB limit), sidecar serves as opaque JSON with staleness detection via `lastPushed` timestamp
