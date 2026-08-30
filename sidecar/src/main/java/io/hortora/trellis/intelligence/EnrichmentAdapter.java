@@ -1,8 +1,8 @@
 package io.hortora.trellis.intelligence;
 
 import io.cloudevents.CloudEvent;
+import io.hortora.trellis.dependencies.DependencyService;
 import io.hortora.trellis.worklog.BacklogEntry;
-import io.hortora.trellis.worklog.WorklogService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
@@ -18,27 +18,30 @@ public class EnrichmentAdapter {
 
     private static final Pattern BLOCKED_BY_PATTERN = Pattern.compile("#(\\d+)");
 
-    private final WorklogService worklogService;
+    private final DependencyService dependencyService;
     private final Event<CloudEvent> cloudEventBus;
 
     @Inject
-    public EnrichmentAdapter(WorklogService worklogService, Event<CloudEvent> cloudEventBus) {
-        this.worklogService = worklogService;
-        this.cloudEventBus = cloudEventBus;
+    public EnrichmentAdapter(DependencyService dependencyService, Event<CloudEvent> cloudEventBus) {
+        this.dependencyService = dependencyService;
+        this.cloudEventBus     = cloudEventBus;
     }
 
-    public void emitIssueEvents() {
-        if (!worklogService.isDbAvailable()) return;
-        var entries = worklogService.backlogEntries(null);
-        for (BacklogEntry entry : entries) {
-            var blockedBy = extractBlockers(entry);
+    public void emitIssueEvents(java.nio.file.Path workspaceRoot) {
+        var graph = dependencyService.buildGraph(workspaceRoot);
+        for (var node : graph.nodes()) {
+            var blockerData = node.blockedBy().stream()
+                                  .map(ref -> Map.<String, Object>of(
+                                          "number", ref.number(),
+                                          "state", graph.issueStates().getOrDefault(ref, "EXTERNAL")))
+                                  .toList();
             var data = Map.<String, Object>of(
-                    "issueNumber", entry.issueNumber(),
-                    "issueRepo", entry.issueRepo(),
-                    "state", "OPEN",
-                    "title", entry.title() != null ? entry.title() : "",
-                    "blockedBy", blockedBy
-            );
+                    "issueNumber", node.ref().number(),
+                    "issueRepo", node.ref().repo(),
+                    "state", node.issueState(),
+                    "title", node.title() != null ? node.title() : "",
+                    "blockedBy", blockerData
+                                             );
             if (cloudEventBus != null) {
                 cloudEventBus.fireAsync(TrellisCloudEvents.enrichmentIssue(data));
             }
@@ -47,7 +50,7 @@ public class EnrichmentAdapter {
 
     static List<Map<String, Object>> extractBlockers(BacklogEntry entry) {
         var blockers = new ArrayList<Map<String, Object>>();
-        if (entry.labels() == null) return blockers;
+        if (entry.labels() == null) {return blockers;}
         for (String label : entry.labels()) {
             if (label.toLowerCase().startsWith("blocked")) {
                 Matcher m = BLOCKED_BY_PATTERN.matcher(label);
@@ -55,7 +58,7 @@ public class EnrichmentAdapter {
                     blockers.add(Map.of(
                             "number", Integer.parseInt(m.group(1)),
                             "state", "OPEN"
-                    ));
+                                       ));
                 }
             }
         }

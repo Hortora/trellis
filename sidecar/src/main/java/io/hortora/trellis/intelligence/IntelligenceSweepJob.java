@@ -4,6 +4,8 @@ import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import io.hortora.trellis.scanner.FileWatcherService;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -17,14 +19,17 @@ public class IntelligenceSweepJob {
     private final WorklogEventAdapter worklogAdapter;
     private final EnrichmentAdapter enrichmentAdapter;
     private final DeferredItemAdapter deferredAdapter;
+    private final FileWatcherService fileWatcherService;
 
     @Inject
     public IntelligenceSweepJob(WorklogEventAdapter worklogAdapter,
                                 EnrichmentAdapter enrichmentAdapter,
-                                DeferredItemAdapter deferredAdapter) {
+                                DeferredItemAdapter deferredAdapter,
+                                FileWatcherService fileWatcherService) {
         this.worklogAdapter = worklogAdapter;
         this.enrichmentAdapter = enrichmentAdapter;
         this.deferredAdapter = deferredAdapter;
+        this.fileWatcherService = fileWatcherService;
     }
 
     @Scheduled(every = "${trellis.intelligence.poll-interval:5m}",
@@ -38,7 +43,9 @@ public class IntelligenceSweepJob {
             LOG.warning("Worklog adapter sweep failed: " + e.getMessage());
         }
         try {
-            enrichmentAdapter.emitIssueEvents();
+            for (var model : fileWatcherService.allModels()) {
+                enrichmentAdapter.emitIssueEvents(model.root());
+            }
         } catch (Exception e) {
             LOG.warning("Enrichment adapter sweep failed: " + e.getMessage());
         }
