@@ -6,6 +6,7 @@ import type { LayoutState } from '@casehubio/pages-component';
 import { createZoneLayoutEngine } from '@casehubio/pages-runtime';
 import type { ZoneLayoutEngine } from '@casehubio/pages-runtime';
 import { attachDockDrag } from '@casehubio/pages-runtime/dist/dock-drag.js';
+import { renderDockBar } from '@casehubio/pages-runtime/dist/dock-bar-renderer.js';
 import { createContainer, createContainerToolbar } from '@casehubio/pages-runtime/dist/frame-sandbox';
 import type { Container, ContainerToolbar, Layout } from '@casehubio/pages-runtime/dist/frame-sandbox';
 import { DOCK_PANELS, PANEL_TAGS, registerAllPanels, createPanelFactory } from './workbench-panels.js';
@@ -94,13 +95,58 @@ export class TrellisWorkbench extends LitElement {
     const config = dockWorkbench(dockConfig);
     this._engine = createZoneLayoutEngine(dockConfig, savedState?.zones);
 
-    renderComponent(config, root as HTMLElement);
+    renderComponent(root as HTMLElement, config);
 
     const siteRoot = root as HTMLElement;
+    const dockBars = siteRoot.querySelectorAll<HTMLElement>('[data-component-type="dock-bar"]');
+    for (const bar of dockBars) {
+      const propsStr = bar.dataset.componentProps;
+      if (propsStr) {
+        renderDockBar(bar, JSON.parse(propsStr), { zoneEngine: this._engine!, siteTarget: siteRoot });
+      }
+    }
+
     const buttons = siteRoot.querySelectorAll<HTMLElement>('button[data-dock-panel-id]');
     for (const btn of buttons) {
       attachDockDrag(btn, this._engine, siteRoot);
     }
+
+    siteRoot.addEventListener('pages-dock-toggle', ((e: CustomEvent) => {
+      const { panelId, visible } = e.detail;
+      const centre = siteRoot.querySelector('[data-component-id="__dock-centre"]') as HTMLElement | null;
+      if (!centre) return;
+
+      const sideZone = siteRoot.querySelector('[data-component-id="__zone:left-top"]') as HTMLElement | null;
+
+      if (visible) {
+        const tag = PANEL_TAGS[panelId];
+        if (tag) {
+          centre.querySelectorAll('[data-dock-panel-content]').forEach(el => el.remove());
+          const el = document.createElement(tag);
+          (el as any).workspaceRoot = this.workspaceRoot;
+          el.style.height = '100%';
+          el.style.width = '100%';
+          el.setAttribute('data-dock-panel-content', panelId);
+          centre.appendChild(el);
+          if (sideZone) {
+            const sideSlot = sideZone.closest('[data-slot]') as HTMLElement | null;
+            if (sideSlot) sideSlot.style.display = 'none';
+            const handle = siteRoot.querySelector('[data-split-handle]') as HTMLElement | null;
+            if (handle) handle.style.display = 'none';
+          }
+        }
+      } else {
+        const existing = centre.querySelector(`[data-dock-panel-content="${panelId}"]`);
+        existing?.remove();
+        if (sideZone && !centre.querySelector('[data-dock-panel-content]')) {
+          const sideSlot = sideZone.closest('[data-slot]') as HTMLElement | null;
+          if (sideSlot) sideSlot.style.display = '';
+          const handle = siteRoot.querySelector('[data-split-handle]') as HTMLElement | null;
+          if (handle) handle.style.display = '';
+        }
+      }
+      this._scheduleSave();
+    }) as EventListener);
 
     siteRoot.addEventListener('pages-dock-rearrange', ((e: CustomEvent) => {
       const { panelKey, toZone, insertIndex } = e.detail;
@@ -108,7 +154,7 @@ export class TrellisWorkbench extends LitElement {
       this._scheduleSave();
     }) as EventListener);
 
-    const centreMount = root.querySelector('#__dock-centre');
+    const centreMount = root.querySelector('[data-component-id="__dock-centre"]');
     if (!centreMount) return;
 
     const activeLayout = (savedState?.containerState?.layout as Layout) ?? 'content';

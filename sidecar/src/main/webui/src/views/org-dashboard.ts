@@ -66,15 +66,15 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _showRecent = false;
 
   static override styles = css`
-    :host { display: block; height: 100%; overflow-y: auto; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; }
+    :host { display: block; height: 100%; overflow-y: auto; overflow-x: hidden; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; box-sizing: border-box; }
 
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
     .header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
     .scanned { font-size: 0.75rem; color: #888; }
 
-    .root-input { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .root-input { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; max-width: 100%; }
     .root-input input {
-      flex: 1; padding: 0.5rem 0.75rem; background: #2a2a2a; border: 1px solid #444;
+      flex: 1; min-width: 0; padding: 0.5rem 0.75rem; background: #2a2a2a; border: 1px solid #444;
       border-radius: 6px; color: #eee; font-family: monospace; font-size: 0.85rem;
     }
     .root-input button {
