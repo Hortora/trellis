@@ -11,6 +11,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -28,10 +29,18 @@ public class TerminalResource {
     AgentProcessManager processManager;
 
     @GET
-    public Response list() {
-        var snapshots = registry.list().stream()
-                                .map(t -> processManager.getSnapshot(t.name(), t))
-                                .toList();
+    public Response list(@QueryParam("repo") String repo,
+                         @QueryParam("slot") String slot) {
+        var stream = registry.list().stream();
+        if (repo != null && !repo.isBlank()) {
+            stream = stream.filter(t -> repo.equals(t.repo()));
+        }
+        if (slot != null && !slot.isBlank()) {
+            stream = stream.filter(t -> slot.equals(t.slot()));
+        }
+        var snapshots = stream
+                .map(t -> processManager.getSnapshot(t.name(), t))
+                .toList();
         return Response.ok(snapshots).build();
     }
 

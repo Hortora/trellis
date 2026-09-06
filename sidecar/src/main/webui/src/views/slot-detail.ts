@@ -402,7 +402,9 @@ export class TrellisSlotDetail extends LitElement {
 
   private async _loadTerminals() {
     try {
-      const res = await fetch('/api/terminals');
+      const params = new URLSearchParams();
+      params.set('slot', String(this.slotNumber));
+      const res = await fetch(`/api/terminals?${params}`);
       if (res.ok) this._snapshots = await res.json();
     } catch { /* ignore */ }
   }

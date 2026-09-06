@@ -65,9 +65,9 @@ npm start                                                  # launch app (require
 - Tables use `pages-data-table` with `fromRows()` for data binding, custom `columnRenderers` for badges/buttons, and `mode="paginated"` for content-sized tables
 - Frontend theme: `casehub-dark` via `applyTheme()` + `pages-density-compact` class on documentElement
 - `GET /api/artifacts?root=...` — list workspace/project artifacts; `GET /api/artifacts/content?path=...&root=...` — serve raw markdown
-- `GET /api/terminals` — list all terminal sessions with agent state/memory; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
+- `GET /api/terminals` — list terminal sessions with agent state/memory; optional `?repo=` and `?slot=` filters; `GET /api/terminals/{name}/agent/tree` — process tree breakdown
 - `GET /api/protocols/repos?root=...` — list repos with `docs/protocols/INDEX.md`; `GET /api/protocols/entries?index=...` — parse INDEX.md chain; `POST/DELETE /api/protocols/entries` — add/remove with git commit
-- `GET /api/backlog` — enriched backlog from soredium's worklog DB (`~/.hortora/worklog.db`); optional `?repo=` filter; delegates to `WorklogService`
+- `GET /api/backlog` — enriched backlog from soredium's worklog DB (`~/.hortora/worklog.db`); optional `?repo=` or `?root=` filter (root resolves workspace repos via `WorkspaceRepos`); delegates to `WorklogService`
 - `GET /api/worklog/events` — lifecycle events from worklog.db; optional `?since=`, `?type=`, `?limit=` filters
 - `GET /api/worklog/work-items` — active work items with issue associations; `GET /api/worklog/work-items/{branch}/timeline?repoPath=` — event timeline for a branch
 - `GET /api/worklog/slots` — slot lifecycle state; optional `?familyRoot=` filter

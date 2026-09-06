@@ -3,6 +3,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 
 const STORAGE_KEY = 'trellis:recent-roots';
 
+export function mergeRecent(recents: string[], root: string): string[] {
+  const filtered = recents.filter(r => r !== root);
+  return [root, ...filtered].slice(0, 5);
+}
+
 @customElement('trellis-space-switcher')
 export class TrellisSpaceSwitcher extends LitElement {
 
@@ -164,6 +169,12 @@ export class TrellisSpaceSwitcher extends LitElement {
     this._loadRecents();
   }
 
+  override updated(changed: Map<PropertyKey, unknown>) {
+    if (changed.has('root') && this.root) {
+      this._saveRecent(this.root);
+    }
+  }
+
   override render() {
     const name = this.root ? this.root.split('/').pop() : '';
 
@@ -277,8 +288,7 @@ export class TrellisSpaceSwitcher extends LitElement {
   }
 
   private _saveRecent(root: string) {
-    const filtered = this._recents.filter(r => r !== root);
-    this._recents = [root, ...filtered].slice(0, 5);
+    this._recents = mergeRecent(this._recents, root);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this._recents));
   }
 }

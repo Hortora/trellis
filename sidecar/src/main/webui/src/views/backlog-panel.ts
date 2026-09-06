@@ -90,7 +90,9 @@ export class TrellisBacklogPanel extends LitElement {
   private async _load() {
     this._loading = true;
     try {
-      const res = await fetch('/api/backlog');
+      const params = new URLSearchParams();
+      if (this.workspaceRoot) params.set('root', this.workspaceRoot);
+      const res = await fetch(`/api/backlog?${params}`);
       if (!res.ok) {
         this._error = `HTTP ${res.status}`;
         return;

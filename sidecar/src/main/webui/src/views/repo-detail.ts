@@ -407,12 +407,12 @@ export class TrellisRepoDetail extends LitElement {
 
   private async _loadTerminal() {
     try {
-      const res = await fetch('/api/terminals');
+      const params = new URLSearchParams();
+      if (this.repoName) params.set('repo', this.repoName);
+      const res = await fetch(`/api/terminals?${params}`);
       if (!res.ok) return;
       const all: AgentSnapshot[] = await res.json();
-      this._snapshot = all.find(
-        s => s.terminal.repo === this.repoName && !s.terminal.slot
-      ) ?? null;
+      this._snapshot = all.find(s => !s.terminal.slot) ?? null;
     } catch { /* ignore */ }
   }
 }
