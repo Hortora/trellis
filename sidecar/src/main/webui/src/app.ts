@@ -8,7 +8,7 @@ applyTheme('casehub-dark');
 document.documentElement.classList.add('pages-density-compact');
 
 const container = document.getElementById('app');
-let currentView: 'launcher' | 'workbench' = 'launcher';
+let currentView: 'launcher' | 'workbench' | 'none' = 'none';
 let workbench: HTMLElement | null = null;
 
 function route() {

@@ -92,7 +92,7 @@ public class TmuxManager {
 
 
     public void pipePaneToFifo(String name, String fifoPath) throws IOException, InterruptedException {
-        run("tmux", "pipe-pane", "-t", name, "cat > " + fifoPath);
+        run("tmux", "pipe-pane", "-O", "-t", name, "cat > " + fifoPath);
     }
 
     public void stopPipePane(String name) throws IOException, InterruptedException {

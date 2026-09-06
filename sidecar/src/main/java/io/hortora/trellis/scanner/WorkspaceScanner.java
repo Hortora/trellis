@@ -117,7 +117,7 @@ public class WorkspaceScanner {
                     SlotInfo info = parseSlotFile(slotFile, slotDir, number);
                     if (info != null) {
                         slots.add(new SlotInfo(info.number(), info.path(), info.issue(),
-                                SlotStatus.ARCHIVED, info.isEpic(), info.repos()));
+                                SlotStatus.ARCHIVED, info.isEpic(), info.repos(), info.slug(), info.title(), info.description(), info.whatToDo(), info.covers()));
                     }
                 } catch (Exception e) {
                     LOG.warnf(e, "Skipping corrupted attic slot: %s", slotFile);
@@ -154,33 +154,73 @@ public class WorkspaceScanner {
         }
     }
 
+    private static final Pattern BRANCH_HEADER_PATTERN = Pattern.compile("^# Slot \\d+ — (.+)$");
+    private static final Pattern BRANCH_CREATED_PATTERN = Pattern.compile("branch:\\s*(.+)$");
+
     private SlotInfo parseSlotFile(Path slotFile, Path slotDir, int number) throws IOException {
         var lines = Files.readAllLines(slotFile);
         String issue = null;
+        String slug = null;
+        String title = null;
         boolean isEpic = false;
         var repos = new ArrayList<String>();
-        boolean inReposSection = false;
+        var covers = new ArrayList<Integer>();
+        var descLines = new ArrayList<String>();
+        var whatToDoLines = new ArrayList<String>();
+        String currentSection = "";
 
         for (String line : lines) {
             String trimmed = line.trim();
 
-            if (trimmed.startsWith("## ")) {
-                inReposSection = "## Repos".equals(trimmed);
+            if (trimmed.startsWith("# Slot ")) continue;
+
+            if (trimmed.startsWith("slug:")) {
+                slug = trimmed.substring("slug:".length()).trim();
+                continue;
+            }
+            if (trimmed.startsWith("title:")) {
+                title = trimmed.substring("title:".length()).trim();
                 continue;
             }
 
-            if (issue == null && !trimmed.isEmpty() && !trimmed.startsWith("#")) {
-                Matcher m = ISSUE_PATTERN.matcher(trimmed);
-                if (m.find()) issue = m.group(1);
+            if (trimmed.startsWith("## ")) {
+                currentSection = trimmed;
+                continue;
+            }
+
+            switch (currentSection) {
+                case "## Issue" -> {
+                    if (issue == null && !trimmed.isEmpty()) {
+                        Matcher m = ISSUE_PATTERN.matcher(trimmed);
+                        if (m.find()) issue = m.group(1);
+                    }
+                    if (trimmed.startsWith("Covers:")) {
+                        var nums = trimmed.substring("Covers:".length()).trim();
+                        for (var n : nums.split(",")) {
+                            try { covers.add(Integer.parseInt(n.trim())); } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                }
+                case "## Description" -> {
+                    if (!trimmed.isEmpty()) descLines.add(trimmed);
+                }
+                case "## What to do" -> {
+                    if (!trimmed.isEmpty()) whatToDoLines.add(trimmed);
+                }
+                case "## Repos" -> {
+                    Matcher m = REPO_LINE_PATTERN.matcher(trimmed);
+                    if (m.find()) repos.add(m.group(1));
+                }
+                default -> {}
             }
 
             if (trimmed.startsWith("Type:") && trimmed.contains("epic")) {
                 isEpic = true;
             }
 
-            if (inReposSection) {
-                Matcher m = REPO_LINE_PATTERN.matcher(trimmed);
-                if (m.find()) repos.add(m.group(1));
+            if (slug == null && trimmed.startsWith("branch:")) {
+                Matcher bm = BRANCH_CREATED_PATTERN.matcher(trimmed);
+                if (bm.find()) slug = bm.group(1).trim();
             }
         }
 
@@ -189,7 +229,10 @@ public class WorkspaceScanner {
         boolean readyToLand = Files.exists(slotDir.resolve(".phase-a-complete"));
         SlotStatus status = readyToLand ? SlotStatus.READY_TO_LAND : SlotStatus.ACTIVE;
 
-        return new SlotInfo(number, slotDir, issue, status, isEpic, List.copyOf(repos));
+        String description = descLines.isEmpty() ? null : String.join(" ", descLines);
+        String whatToDo = whatToDoLines.isEmpty() ? null : String.join(" ", whatToDoLines);
+
+        return new SlotInfo(number, slotDir, issue, status, isEpic, List.copyOf(repos), slug, title, description, whatToDo, List.copyOf(covers));
     }
 
     private void scanPauseStack(Path pauseFile, List<PauseEntry> pauses) {

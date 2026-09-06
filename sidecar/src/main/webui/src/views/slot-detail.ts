@@ -10,6 +10,14 @@ interface SlotInfo {
   status: string;
   isEpic: boolean;
   repos: string[];
+  slug: string | null;
+  title: string | null;
+  covers: number[];
+}
+
+interface RepoInfo {
+  name: string;
+  branch: string;
 }
 
 interface AgentProcess {
@@ -38,9 +46,11 @@ export class TrellisSlotDetail extends LitElement {
 
   @property({ type: Number }) slotNumber = 0;
   @property() workspaceRoot = '';
+  @property({ type: Boolean }) modal = false;
 
   @state() private _slot: SlotInfo | null = null;
   @state() private _snapshots: AgentSnapshot[] = [];
+  @state() private _repoInfos: RepoInfo[] = [];
   @state() private _error: string | null = null;
   @state() private _actionInProgress: string | null = null;
   @state() private _evictionCandidates: Set<string> = new Set();
@@ -110,11 +120,24 @@ export class TrellisSlotDetail extends LitElement {
     .evict-btn:hover { background: #991b1b; }
   `;
 
+  private _lastSlotNumber = -1;
+
   override connectedCallback() {
     super.connectedCallback();
+    this._lastSlotNumber = this.slotNumber;
     this._loadSlot();
     this._loadTerminals();
     this._subscribeEvents();
+  }
+
+  override updated(changed: Map<PropertyKey, unknown>) {
+    if (changed.has('slotNumber') && this.slotNumber !== this._lastSlotNumber) {
+      this._lastSlotNumber = this.slotNumber;
+      this._slot = null;
+      this._error = null;
+      this._loadSlot();
+      this._loadTerminals();
+    }
   }
 
   override disconnectedCallback() {
@@ -160,7 +183,25 @@ export class TrellisSlotDetail extends LitElement {
           </div>
         ` : nothing}
         <div class="terminal-area">
-          <trellis-terminal-tab-group .tabs=${tabs}></trellis-terminal-tab-group>
+          ${tabs.length > 0
+            ? html`<trellis-terminal-tab-group .tabs=${tabs}></trellis-terminal-tab-group>`
+            : html`
+              <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1.5rem;color:#666">
+                <div style="font-size:0.9rem">No terminal sessions for this slot.</div>
+                <div style="font-size:0.8rem;color:#555">${this._slot!.repos[0] ?? 'unknown'} (primary)</div>
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center">
+                  <button class="action-btn" @click=${() => this._createTerminal(this._slot!.repos[0], false)}>
+                    Terminal
+                  </button>
+                  <button class="action-btn primary" @click=${() => this._createTerminal(this._slot!.repos[0], true)}>
+                    New agent
+                  </button>
+                  <button class="action-btn primary" @click=${() => this._createTerminal(this._slot!.repos[0], true, true)}>
+                    Resume agent
+                  </button>
+                </div>
+              </div>
+            `}
         </div>
       </div>
       ${this._renderSidebar()}
@@ -176,7 +217,7 @@ export class TrellisSlotDetail extends LitElement {
     const slot = this._slot!;
     return html`
       <div class="toolbar">
-        <button class="action-btn" @click=${this._goBack} title="Back to workspace">←</button>
+        ${!this.modal ? html`<button class="action-btn" @click=${this._goBack} title="Back to workspace">←</button>` : nothing}
         <h2>Slot ${slot.number}</h2>
         <span class="issue-ref">${slot.issue}</span>
         <span class="spacer"></span>
@@ -205,14 +246,32 @@ export class TrellisSlotDetail extends LitElement {
         </div>
 
         <div class="sidebar-section">
-          <h3>Issue</h3>
+          <h3>Issues</h3>
           <div class="meta-item"><span class="meta-value">${slot.issue}</span></div>
+          ${slot.covers && slot.covers.length > 0 ? html`
+            <div style="margin-top:0.4rem">
+              ${slot.covers.map(n => {
+                const issuePrefix = slot.issue.replace(/#\d+$/, '#');
+                const isCurrent = slot.issue.endsWith('#' + n);
+                return html`
+                  <span class="badge" style="margin:0.1rem 0.15rem;${isCurrent ? 'background:#1e3a5f;color:#93c5fd;font-weight:600' : 'background:#333;color:#888'}">
+                    #${n}${isCurrent ? ' ●' : ''}
+                  </span>
+                `;
+              })}
+            </div>
+          ` : nothing}
         </div>
 
         <div class="sidebar-section">
           <h3>Repos</h3>
           <ul class="repo-list">
-            ${slot.repos.map(r => html`<li>${r}</li>`)}
+            ${this._repoInfos.length > 0
+              ? this._repoInfos.map((r, i) => html`
+                  <li>${r.name}${i === 0 ? ' (primary)' : ''}
+                    <span style="display:block;font-size:0.7rem;color:#666">${r.branch}</span>
+                  </li>`)
+              : slot.repos.map(r => html`<li>${r}</li>`)}
           </ul>
         </div>
 
@@ -247,7 +306,9 @@ export class TrellisSlotDetail extends LitElement {
       if (!res.ok) { this._error = `Failed to load workspace: HTTP ${res.status}`; return; }
       const model = await res.json();
       this._slot = model.slots.find((s: SlotInfo) => s.number === this.slotNumber) ?? null;
-      if (!this._slot) this._error = `Slot ${this.slotNumber} not found`;
+      if (!this._slot) { this._error = `Slot ${this.slotNumber} not found`; return; }
+      this._repoInfos = (model.repos ?? []).filter((r: RepoInfo) =>
+        this._slot!.repos.includes(r.name));
     } catch (e) {
       this._error = `Failed to load slot: ${e}`;
     }
@@ -303,6 +364,37 @@ export class TrellisSlotDetail extends LitElement {
       this._loadTerminals();
     } catch (e) {
       this._error = `${action} failed: ${e}`;
+    } finally {
+      this._actionInProgress = null;
+    }
+  }
+
+  private async _createTerminal(repo: string, withAgent = false, resume = false) {
+    this._actionInProgress = 'create';
+    try {
+      const repoPath = this.workspaceRoot ? `${this.workspaceRoot}/${repo}` : `/tmp/${repo}`;
+      const body: Record<string, unknown> = {
+        name: `repo-${repo}`,
+        workingDir: repoPath,
+        slot: String(this.slotNumber),
+        repo,
+        issue: this._slot?.issue ?? null,
+      };
+      if (withAgent) {
+        body.agent = { resume, prompt: null };
+      }
+      const res = await fetch('/api/terminals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const body2 = await res.json().catch(() => null);
+        this._error = body2?.error ?? `Create failed: HTTP ${res.status}`;
+      }
+      this._loadTerminals();
+    } catch (e) {
+      this._error = `Create failed: ${e}`;
     } finally {
       this._actionInProgress = null;
     }

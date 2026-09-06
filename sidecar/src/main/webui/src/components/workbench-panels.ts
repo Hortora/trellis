@@ -44,7 +44,11 @@ export function createPanelFactory(workspaceRoot: string): ContentFactory {
     if (!tag) throw new Error(`Unknown panel: ${entry.key}`);
     const el = document.createElement(tag);
     (el as any).workspaceRoot = workspaceRoot;
-    return { element: el, dispose: () => el.remove() };
+    return {
+      element: el,
+      dispose: () => el.remove(),
+      captureContainerTree: () => ({ key: entry.key, tag }),
+    };
   };
 }
 

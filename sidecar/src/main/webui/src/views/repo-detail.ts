@@ -35,6 +35,7 @@ export class TrellisRepoDetail extends LitElement {
 
   @property() repoName = '';
   @property() workspaceRoot = '';
+  @property({ type: Boolean }) modal = false;
 
   @state() private _repo: RepoData | null = null;
   @state() private _snapshot: AgentSnapshot | null = null;
@@ -219,9 +220,15 @@ export class TrellisRepoDetail extends LitElement {
               ></pages-component-terminal>
             </div>`
           : html`<div class="empty-state">
-              <p>No agent running for this repo.</p>
-              <button class="start-btn" ?disabled=${!!this._actionInProgress}
-                      @click=${this._createTerminal}>Start Agent</button>
+              <p>No terminal sessions for this repo.</p>
+              <div style="display:flex;gap:0.75rem;justify-content:center;margin-top:0.75rem">
+                <button class="action-btn" ?disabled=${!!this._actionInProgress}
+                        @click=${() => this._createTerminalWith(false)}>Terminal</button>
+                <button class="action-btn primary" ?disabled=${!!this._actionInProgress}
+                        @click=${() => this._createTerminalWith(true)}>New agent</button>
+                <button class="action-btn primary" ?disabled=${!!this._actionInProgress}
+                        @click=${() => this._createTerminalWith(true, true)}>Resume agent</button>
+              </div>
             </div>`
         }
       </div>
@@ -245,7 +252,7 @@ export class TrellisRepoDetail extends LitElement {
     const repo = this._repo!;
     return html`
       <div class="toolbar">
-        <button class="action-btn" @click=${this._goBack} title="Back to workspace">←</button>
+        ${!this.modal ? html`<button class="action-btn" @click=${this._goBack} title="Back to workspace">←</button>` : nothing}
         <h2>${repo.name}</h2>
         <span class="badge badge-branch">${repo.branch}</span>
         <span class="spacer"></span>
@@ -326,23 +333,26 @@ export class TrellisRepoDetail extends LitElement {
     }
   }
 
-  private async _createTerminal() {
+  private async _createTerminalWith(withAgent = false, resume = false) {
     if (!this._repo) return;
     this._actionInProgress = 'create';
     try {
+      const body: Record<string, unknown> = {
+        name: `repo-${this.repoName}`,
+        workingDir: this._repo.path,
+        repo: this.repoName,
+      };
+      if (withAgent) {
+        body.agent = { resume, prompt: null };
+      }
       const res = await fetch('/api/terminals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `repo-${this.repoName}`,
-          workingDir: this._repo.path,
-          repo: this.repoName,
-          agent: {},
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok && res.status !== 409) {
-        const body = await res.json().catch(() => null);
-        this._error = body?.error ?? `Failed to create terminal: HTTP ${res.status}`;
+        const body2 = await res.json().catch(() => null);
+        this._error = body2?.error ?? `Failed to create terminal: HTTP ${res.status}`;
         return;
       }
       await this._loadTerminal();

@@ -65,7 +65,7 @@ class CoordinatorServiceTest {
     void tickSkipsWhenBatchNotSignificant() {
         var event = new CoordinatorEvent.WorkspaceChangedEvent(
                 Instant.now(), "ws", Path.of("/tmp"));
-        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL));
+        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL, null));
         service.tick(System.currentTimeMillis() + 2000);
 
         assertEquals(0, agentProvider.invocationCount,
@@ -77,7 +77,7 @@ class CoordinatorServiceTest {
         service.onAnalysisRecomputed(testAnalysis());
         var event = new CoordinatorEvent.AnalysisEvent(
                 Instant.now(), "k", "owner/repo#1", List.of("owner/repo#5"));
-        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL));
+        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL, null));
         service.tick(System.currentTimeMillis() + 2000);
 
         assertEquals(1, agentProvider.invocationCount,
@@ -97,7 +97,7 @@ class CoordinatorServiceTest {
 
         var event = new CoordinatorEvent.AnalysisEvent(
                 Instant.now(), "k", "ref", List.of("owner/repo#5"));
-        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL));
+        accumulator.collect(new LevelEvent<>(event, System.currentTimeMillis(), LEVEL, null));
 
         disabledService.tick(System.currentTimeMillis() + 2000);
         assertEquals(0, agentProvider.invocationCount, "should skip when disabled");

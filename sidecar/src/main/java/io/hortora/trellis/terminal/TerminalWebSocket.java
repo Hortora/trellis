@@ -98,10 +98,16 @@ public class TerminalWebSocket {
                 }
             });
 
+            if (cols > 0 && rows > 0) {
+                tmux.resizeWindow(sessionName, cols - 1, rows);
+            }
+
             tmux.pipePaneToFifo(sessionName, fifoPath);
 
             if (cols > 0 && rows > 0) {
-                tmux.forceRedraw(sessionName, cols, rows);
+                connection.sendTextAndAwait("\033[2J\033[H");
+                Thread.sleep(50);
+                tmux.resizeWindow(sessionName, cols, rows);
             }
 
         } catch (java.io.IOException | InterruptedException e) {

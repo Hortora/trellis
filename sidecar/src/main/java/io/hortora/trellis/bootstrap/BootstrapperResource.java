@@ -2,7 +2,7 @@ package io.hortora.trellis.bootstrap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.ObservesAsync;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
@@ -32,6 +32,7 @@ public class BootstrapperResource {
     private volatile ProjectRegistry registry;
 
     private final Map<String, List<SseConnection>> sseClients = new ConcurrentHashMap<>();
+    private final Map<String, List<BootstrapProgress>> eventBuffer = new ConcurrentHashMap<>();
 
     record SseConnection(SseEventSink sink, Sse sse) {}
 
@@ -79,6 +80,8 @@ public class BootstrapperResource {
                     .entity(Map.of("error", "Bootstrap already running for " + projectId)).build();
             }
 
+            eventBuffer.put(projectId, new CopyOnWriteArrayList<>());
+
             java.nio.file.Path targetDir = java.nio.file.Path.of(System.getProperty("user.home"), "claude", projectId, "parent");
 
             Thread.ofVirtual().name("bootstrap-" + projectId).start(() ->
@@ -98,10 +101,30 @@ public class BootstrapperResource {
                                @Context Sse sse) {
         sseClients.computeIfAbsent(projectId, k -> new CopyOnWriteArrayList<>())
             .add(new SseConnection(sink, sse));
+
+        var buffered = eventBuffer.get(projectId);
+        if (buffered != null) {
+            for (var progress : buffered) {
+                try {
+                    sink.send(sse.newEventBuilder()
+                        .name(progress.phase())
+                        .data(progress.message())
+                        .build());
+                    if (progress.terminal()) {
+                        sink.close();
+                        return;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
         sink.send(sse.newEvent("connected", projectId));
     }
 
-    void onProgress(@ObservesAsync BootstrapProgress progress) {
+    void onProgress(@Observes BootstrapProgress progress) {
+        var buffer = eventBuffer.get(progress.projectId());
+        if (buffer != null) buffer.add(progress);
+
         var clients = sseClients.get(progress.projectId());
         if (clients == null) return;
 
@@ -122,6 +145,7 @@ public class BootstrapperResource {
 
         if (progress.terminal()) {
             sseClients.remove(progress.projectId());
+            eventBuffer.remove(progress.projectId());
         }
     }
 }

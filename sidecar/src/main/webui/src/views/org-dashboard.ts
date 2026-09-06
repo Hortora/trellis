@@ -1,5 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import './slot-detail.js';
+import './repo-detail.js';
+import { customElement, property, state } from 'lit/decorators.js';
 
 interface RepoInfo {
   name: string;
@@ -15,6 +17,10 @@ interface SlotInfo {
   status: 'ACTIVE' | 'READY_TO_LAND' | 'ARCHIVED';
   isEpic: boolean;
   repos: string[];
+  slug: string | null;
+  title: string | null;
+  description: string | null;
+  whatToDo: string | null;
 }
 
 interface PauseEntry {
@@ -57,6 +63,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 @customElement('trellis-org-dashboard')
 export class TrellisOrgDashboard extends LitElement {
+  @property() workspaceRoot = '';
   @state() private _model: WorkspaceModel | null = null;
   @state() private _error: string | null = null;
   @state() private _loading = false;
@@ -64,6 +71,11 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _portfolioData = new Map<string, EpicSummary>();
   @state() private _recentRoots: string[] = [];
   @state() private _showRecent = false;
+  @state() private _modal: { type: 'slot'; slotNumber: number; label: string } | { type: 'repo'; repoName: string; label: string } | null = null;
+  @state() private _hideArchived = true;
+  @state() private _hoverSlot: number | null = null;
+  private _lastScannedRoot = '';
+  private _savedScrollTop = 0;
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; overflow-x: hidden; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; box-sizing: border-box; }
@@ -115,9 +127,9 @@ export class TrellisOrgDashboard extends LitElement {
     }
     .card:hover { border-color: #555; }
 
-    .card-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem; }
-    .card-detail { font-size: 0.8rem; color: #999; font-family: monospace; }
-    .card-meta { display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
+    .card-name { font-weight: 600; font-size: 0.9rem; }
+    .card-detail { font-size: 0.75rem; color: #999; font-family: monospace; margin-top: 0.2rem; }
+    .card-meta { display: flex; gap: 0.4rem; margin-top: 0.3rem; flex-wrap: wrap; }
 
     .badge {
       display: inline-flex; align-items: center; padding: 0.1rem 0.5rem;
@@ -133,45 +145,81 @@ export class TrellisOrgDashboard extends LitElement {
 
     .empty { color: #666; font-style: italic; font-size: 0.85rem; }
     .error { color: #f87171; margin-bottom: 1rem; }
+
+    .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .pill {
+      padding: 0.2rem 0.75rem; border-radius: 12px; font-size: 0.75rem;
+      cursor: pointer; border: 1px solid #444; background: #2a2a2a; color: #ccc;
+      transition: all 0.15s;
+    }
+    .pill:hover { background: #333; }
+    .pill.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+
+    .card { position: relative; }
+    .card.expanded { border-radius: 8px 8px 0 0; border-bottom-color: transparent; z-index: 10; }
+    .card-slot-num { font-size: 0.7rem; color: #666; font-family: monospace; }
+
+    .hover-extension {
+      position: absolute; top: calc(100% - 1px); left: -1px; right: -1px; z-index: 10;
+      background: #252525; border: 1px solid #555; border-top: 1px solid #333;
+      border-radius: 0 0 8px 8px; padding: 0.5rem 0.75rem 0.75rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .hover-label { font-size: 0.65rem; color: #555; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+    .hover-label:not(:first-child) { margin-top: 0.4rem; }
+    .hover-text { font-size: 0.78rem; color: #aaa; line-height: 1.4; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+    }
+    :host(.modal-open) { overflow: hidden; }
+    .modal-frame {
+      width: 90vw; height: 85vh; max-width: 1200px;
+      background: #1e1e1e; border: 1px solid #444; border-radius: 10px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .modal-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 1rem; background: #181818; border-bottom: 1px solid #333;
+    }
+    .modal-header .spacer { flex: 1; }
+    .modal-title { font-weight: 600; font-size: 0.95rem; }
+    .modal-btn {
+      padding: 0.25rem 0.6rem; border: 1px solid #444; border-radius: 4px;
+      background: #2a2a2a; color: #ccc; cursor: pointer; font-size: 0.75rem;
+    }
+    .modal-btn:hover { background: #333; }
+    .modal-btn.primary { border-color: #1d4ed8; color: #93c5fd; }
+    .modal-btn.primary:hover { background: #1e3a5f; }
+    .modal-body { flex: 1; min-height: 0; overflow: hidden; }
+    .modal-body trellis-slot-detail { height: 100%; }
+
+    .modal-nav {
+      display: flex; align-items: center; gap: 0.25rem;
+    }
+    .nav-btn {
+      padding: 0.2rem 0.4rem; border: 1px solid #444; border-radius: 4px;
+      background: #2a2a2a; color: #888; cursor: pointer; font-size: 0.85rem;
+      line-height: 1; transition: all 0.15s;
+    }
+    .nav-btn:hover { background: #333; color: #eee; }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; }
+    .nav-pos { font-size: 0.7rem; color: #666; padding: 0 0.3rem; font-variant-numeric: tabular-nums; }
   `;
 
   override render() {
     return html`
       <div class="header">
-        <h1>Trellis</h1>
+        <h1>${this._root ? this._root.split('/').pop() : 'Trellis'}</h1>
         ${this._model ? html`<span class="scanned">scanned ${this._formatTime(this._model.scannedAt)}</span>` : nothing}
       </div>
 
-      <div class="root-input">
-        ${this._hasBrowse() ? html`
-          <button class="browse-btn" @click=${this._browse} title="Browse for folder">📂</button>
-        ` : nothing}
-        <div class="root-wrapper">
-          <input
-            type="text"
-            placeholder="Workspace root (e.g., ~/claude/casehub)"
-            .value=${this._root}
-            @input=${(e: Event) => { this._root = (e.target as HTMLInputElement).value; }}
-            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this._scan(); }}
-            @focus=${() => { if (this._recentRoots.length > 0) this._showRecent = true; }}
-            @blur=${() => { setTimeout(() => { this._showRecent = false; }, 150); }}
-          />
-          ${this._showRecent && this._recentRoots.length > 0 ? html`
-            <div class="recent-list">
-              <div class="recent-header">Recent</div>
-              ${this._recentRoots.map(r => html`
-                <div class="recent-item" @mousedown=${() => { this._root = r; this._showRecent = false; this._scan(); }}>${r}</div>
-              `)}
-            </div>
-          ` : nothing}
-        </div>
-        <button @click=${this._scan} ?disabled=${this._loading}>
-          ${this._loading ? 'Scanning...' : 'Scan'}
-        </button>
-      </div>
-
       ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
-      ${this._model ? this._renderModel(this._model) : html`<div class="empty">Enter a workspace root to scan.</div>`}
+      ${this._loading ? html`<div class="empty">Scanning...</div>` : nothing}
+      ${!this._loading && this._model ? this._renderModel(this._model) : nothing}
+      ${!this._loading && !this._model && !this._error ? html`<div class="empty">Select a space from the switcher above.</div>` : nothing}
+      ${this._modal ? this._renderModal() : nothing}
     `;
   }
 
@@ -204,12 +252,28 @@ export class TrellisOrgDashboard extends LitElement {
 
   private _renderSlots(slots: SlotInfo[]) {
     if (slots.length === 0) return nothing;
+    const archivedCount = slots.filter(s => s.status === 'ARCHIVED').length;
+    const filtered = this._hideArchived ? slots.filter(s => s.status !== 'ARCHIVED') : slots;
     return html`
       <div class="section">
-        <h2>Slots <span class="count">${slots.length}</span></h2>
-        <div class="grid">${slots.map(s => html`
-          <div class="card" style="cursor:pointer" @click=${() => this._openSlot(s.number)}>
-            <div class="card-name">Slot ${s.number}</div>
+        <h2>Slots <span class="count">${filtered.length}${this._hideArchived && archivedCount > 0 ? ` / ${slots.length}` : ''}</span></h2>
+        ${archivedCount > 0 ? html`
+          <div class="filters">
+            <span class="pill ${this._hideArchived ? 'active' : ''}"
+                  @click=${() => { this._hideArchived = !this._hideArchived; }}>
+              ${this._hideArchived ? 'Show archived' : 'Hide archived'} (${archivedCount})
+            </span>
+          </div>
+        ` : nothing}
+        <div class="grid">${filtered.map(s => html`
+          <div class="card ${this._hoverSlot === s.number && (s.description || s.whatToDo) ? 'expanded' : ''}" style="cursor:pointer"
+               @click=${() => this._openSlot(s.number)}
+               @mouseenter=${() => { this._hoverSlot = s.number; }}
+               @mouseleave=${() => { this._hoverSlot = null; }}>
+            <div style="display:flex;align-items:baseline;gap:0.4rem">
+              <span class="card-slot-num">#${s.number}</span>
+              <span class="card-name">${s.title ?? s.slug ?? `Slot ${s.number}`}</span>
+            </div>
             <div class="card-detail">${s.issue}</div>
             <div class="card-meta">
               <span class="badge badge-status" style="background:${STATUS_COLORS[s.status] ?? '#666'}">
@@ -218,6 +282,18 @@ export class TrellisOrgDashboard extends LitElement {
               ${s.isEpic ? html`<span class="badge badge-epic">epic</span>` : nothing}
               ${s.repos.map(r => html`<span class="badge badge-branch">${r}</span>`)}
             </div>
+            ${this._hoverSlot === s.number && (s.description || s.whatToDo) ? html`
+              <div class="hover-extension">
+                ${s.description ? html`
+                  <div class="hover-label">Description</div>
+                  <div class="hover-text">${s.description}</div>
+                ` : nothing}
+                ${s.whatToDo ? html`
+                  <div class="hover-label">What to do</div>
+                  <div class="hover-text">${s.whatToDo}</div>
+                ` : nothing}
+              </div>
+            ` : nothing}
           </div>
         `)}</div>
       </div>
@@ -289,16 +365,53 @@ export class TrellisOrgDashboard extends LitElement {
   }
 
   private _openSlot(slotNumber: number) {
-    location.hash = `#slot/${slotNumber}?root=${encodeURIComponent(this._root)}`;
+    const slot = this._model?.slots.find(s => s.number === slotNumber);
+    this._modal = { type: 'slot', slotNumber, label: slot?.title ?? slot?.slug ?? `Slot ${slotNumber}` };
+    this._showModal();
+  }
+
+  private _showModal() {
+    this._savedScrollTop = this.scrollTop;
+    this.classList.add('modal-open');
+    this.scrollTop = 0;
+  }
+
+  private _closeModal() {
+    this._modal = null;
+    this.classList.remove('modal-open');
+    requestAnimationFrame(() => { this.scrollTop = this._savedScrollTop; });
+  }
+
+  private _openInWorkspace() {
+    if (!this._modal) return;
+    const m = this._modal;
+    this._modal = null;
+    if (m.type === 'slot') {
+      location.hash = `#slot/${m.slotNumber}?root=${encodeURIComponent(this._root)}`;
+    } else {
+      location.hash = `#repo/${encodeURIComponent(m.repoName)}?root=${encodeURIComponent(this._root)}`;
+    }
   }
 
   private _openRepo(name: string) {
-    location.hash = `#repo/${encodeURIComponent(name)}?root=${encodeURIComponent(this._root)}`;
+    this._modal = { type: 'repo', repoName: name, label: name };
+    this._showModal();
   }
 
   override connectedCallback() {
     super.connectedCallback();
     this._loadRecent();
+    if (this.workspaceRoot && this.workspaceRoot !== this._lastScannedRoot) {
+      this._root = this.workspaceRoot;
+      this._scan();
+    }
+  }
+
+  override updated(changed: Map<PropertyKey, unknown>) {
+    if (changed.has('workspaceRoot') && this.workspaceRoot && this.workspaceRoot !== this._lastScannedRoot) {
+      this._root = this.workspaceRoot;
+      this._scan();
+    }
   }
 
   private _hasBrowse(): boolean {
@@ -338,6 +451,7 @@ export class TrellisOrgDashboard extends LitElement {
         return;
       }
       this._model = await res.json();
+      this._lastScannedRoot = this._root.trim();
       this._saveRecent(this._root.trim());
       this._fetchPortfolio();
     } catch (e) {
@@ -366,6 +480,73 @@ export class TrellisOrgDashboard extends LitElement {
         })
         .catch(() => {});
     }
+  }
+
+  private _getNavList(): { id: string; label: string }[] {
+    if (!this._modal || !this._model) return [];
+    if (this._modal.type === 'slot') {
+      const filtered = this._hideArchived
+        ? this._model.slots.filter(s => s.status !== 'ARCHIVED')
+        : this._model.slots;
+      return filtered.map(s => ({ id: String(s.number), label: s.title ?? s.slug ?? `Slot ${s.number}` }));
+    } else {
+      return this._model.repos.map(r => ({ id: r.name, label: r.name }));
+    }
+  }
+
+  private _navTo(index: number) {
+    if (!this._modal) return;
+    const list = this._getNavList();
+    if (index < 0 || index >= list.length) return;
+    const item = list[index];
+    if (this._modal.type === 'slot') {
+      this._modal = { type: 'slot', slotNumber: parseInt(item.id), label: item.label };
+    } else {
+      this._modal = { type: 'repo', repoName: item.id, label: item.label };
+    }
+  }
+
+  private _renderModal() {
+    const m = this._modal!;
+    const list = this._getNavList();
+    const currentId = m.type === 'slot' ? String(m.slotNumber) : m.repoName;
+    const idx = list.findIndex(i => i.id === currentId);
+    const total = list.length;
+
+    return html`
+      <div class="modal-backdrop" @click=${this._closeModal}>
+        <div class="modal-frame" @click=${(e: Event) => e.stopPropagation()}>
+          <div class="modal-header">
+            <div class="modal-nav">
+              <button class="nav-btn" ?disabled=${idx <= 0} @click=${() => this._navTo(0)} title="First">⏮</button>
+              <button class="nav-btn" ?disabled=${idx <= 0} @click=${() => this._navTo(idx - 1)} title="Previous">◀</button>
+              <span class="nav-pos">${idx + 1} / ${total}</span>
+              <button class="nav-btn" ?disabled=${idx >= total - 1} @click=${() => this._navTo(idx + 1)} title="Next">▶</button>
+              <button class="nav-btn" ?disabled=${idx >= total - 1} @click=${() => this._navTo(total - 1)} title="Last">⏭</button>
+            </div>
+            <span class="modal-title">${m.label}</span>
+            <span class="spacer"></span>
+            <button class="modal-btn primary" @click=${() => this._openInWorkspace()}>
+              Open in workspace
+            </button>
+            <button class="modal-btn" @click=${this._closeModal}>✕</button>
+          </div>
+          <div class="modal-body">
+            ${m.type === 'slot'
+              ? html`<trellis-slot-detail
+                  .slotNumber=${m.slotNumber}
+                  .workspaceRoot=${this._root}
+                  .modal=${true}
+                ></trellis-slot-detail>`
+              : html`<trellis-repo-detail
+                  .repoName=${m.repoName}
+                  .workspaceRoot=${this._root}
+                  .modal=${true}
+                ></trellis-repo-detail>`}
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   private _openEpic(issueKey: string) {

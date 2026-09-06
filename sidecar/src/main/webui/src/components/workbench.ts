@@ -10,6 +10,7 @@ import { renderDockBar } from '@casehubio/pages-runtime/dist/dock-bar-renderer.j
 import { createContainer, createContainerToolbar } from '@casehubio/pages-runtime/dist/frame-sandbox';
 import type { Container, ContainerToolbar, Layout } from '@casehubio/pages-runtime/dist/frame-sandbox';
 import { DOCK_PANELS, PANEL_TAGS, registerAllPanels, createPanelFactory } from './workbench-panels.js';
+import './space-switcher.js';
 
 registerAllPanels();
 
@@ -32,16 +33,33 @@ export class TrellisWorkbench extends LitElement {
   private _eventSource: EventSource | null = null;
   private _pendingCorrelationId: string | null = null;
   private _saveDebounce: ReturnType<typeof setTimeout> | null = null;
+  private _panelCache = new Map<string, HTMLElement>();
+  private _activePanel: string | null = null;
 
   static override styles = css`
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       height: 100%;
       width: 100%;
     }
+    .space-bar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      background: #181818;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+      padding-left: 4px;
+      overflow: visible;
+      position: relative;
+      z-index: 50;
+    }
     .workbench-root {
-      height: 100%;
+      flex: 1;
       width: 100%;
+      min-height: 0;
+      overflow: hidden;
     }
   `;
 
@@ -72,6 +90,8 @@ export class TrellisWorkbench extends LitElement {
       this._container = null;
       this._toolbar?.dispose();
       this._toolbar = null;
+      this._panelCache.clear();
+      this._activePanel = null;
     }
     if (!this._rendered && this.workspaceRoot) {
       this._initWorkbench();
@@ -111,39 +131,57 @@ export class TrellisWorkbench extends LitElement {
       attachDockDrag(btn, this._engine, siteRoot);
     }
 
+    const hideSideZone = () => {
+      const sideZone = siteRoot.querySelector('[data-component-id="__zone:left-top"]') as HTMLElement | null;
+      if (sideZone) {
+        const sideSlot = sideZone.closest('[data-slot]') as HTMLElement | null;
+        if (sideSlot) sideSlot.style.display = 'none';
+        const handle = siteRoot.querySelector('[data-split-handle]') as HTMLElement | null;
+        if (handle) handle.style.display = 'none';
+      }
+    };
+    hideSideZone();
+
     siteRoot.addEventListener('pages-dock-toggle', ((e: CustomEvent) => {
-      const { panelId, visible } = e.detail;
+      const { panelId, visible, extraProps } = e.detail;
       const centre = siteRoot.querySelector('[data-component-id="__dock-centre"]') as HTMLElement | null;
       if (!centre) return;
-
-      const sideZone = siteRoot.querySelector('[data-component-id="__zone:left-top"]') as HTMLElement | null;
 
       if (visible) {
         const tag = PANEL_TAGS[panelId];
         if (tag) {
-          centre.querySelectorAll('[data-dock-panel-content]').forEach(el => el.remove());
-          const el = document.createElement(tag);
-          (el as any).workspaceRoot = this.workspaceRoot;
-          el.style.height = '100%';
-          el.style.width = '100%';
-          el.setAttribute('data-dock-panel-content', panelId);
-          centre.appendChild(el);
-          if (sideZone) {
-            const sideSlot = sideZone.closest('[data-slot]') as HTMLElement | null;
-            if (sideSlot) sideSlot.style.display = 'none';
-            const handle = siteRoot.querySelector('[data-split-handle]') as HTMLElement | null;
-            if (handle) handle.style.display = 'none';
+          centre.querySelectorAll('[data-dock-panel-content]').forEach(el => {
+            const key = el.getAttribute('data-dock-panel-content');
+            if (key) this._panelCache.set(key, el as HTMLElement);
+            el.remove();
+          });
+          this._activePanel = panelId;
+          const cacheKey = extraProps ? `${panelId}:${JSON.stringify(extraProps)}` : panelId;
+          let el = extraProps ? null : this._panelCache.get(panelId);
+          if (!el) {
+            el = document.createElement(tag);
+            (el as any).workspaceRoot = this.workspaceRoot;
+            el.style.height = '100%';
+            el.style.width = '100%';
+            el.setAttribute('data-dock-panel-content', panelId);
+            if (extraProps) {
+              for (const [k, v] of Object.entries(extraProps)) {
+                (el as any)[k] = v;
+              }
+            }
+            this._panelCache.set(cacheKey, el);
           }
+          centre.appendChild(el);
+          hideSideZone();
         }
       } else {
         const existing = centre.querySelector(`[data-dock-panel-content="${panelId}"]`);
-        existing?.remove();
-        if (sideZone && !centre.querySelector('[data-dock-panel-content]')) {
-          const sideSlot = sideZone.closest('[data-slot]') as HTMLElement | null;
-          if (sideSlot) sideSlot.style.display = '';
-          const handle = siteRoot.querySelector('[data-split-handle]') as HTMLElement | null;
-          if (handle) handle.style.display = '';
+        if (existing) {
+          this._panelCache.set(panelId, existing as HTMLElement);
+          existing.remove();
         }
+        this._activePanel = null;
+        hideSideZone();
       }
       this._scheduleSave();
     }) as EventListener);
@@ -154,8 +192,16 @@ export class TrellisWorkbench extends LitElement {
       this._scheduleSave();
     }) as EventListener);
 
-    const centreMount = root.querySelector('[data-component-id="__dock-centre"]');
+    const centreMount = root.querySelector('[data-component-id="__dock-centre"]') as HTMLElement | null;
     if (!centreMount) return;
+    centreMount.style.overflow = 'hidden';
+    centreMount.style.minHeight = '0';
+    let ancestor = centreMount.parentElement;
+    while (ancestor && ancestor !== (root as HTMLElement)) {
+      ancestor.style.minHeight = '0';
+      ancestor.style.overflow = 'hidden';
+      ancestor = ancestor.parentElement;
+    }
 
     const activeLayout = (savedState?.containerState?.layout as Layout) ?? 'content';
 
@@ -181,6 +227,31 @@ export class TrellisWorkbench extends LitElement {
       },
     });
     this._container.mount(centreMount as HTMLElement);
+
+    this._routeFromHash();
+  }
+
+  private _routeFromHash() {
+    const hash = location.hash;
+
+    const slotMatch = hash.match(/^#slot\/(\d+)/);
+    if (slotMatch) {
+      this._activatePanel('slot', { slotNumber: parseInt(slotMatch[1], 10) });
+      return;
+    }
+
+    const repoMatch = hash.match(/^#repo\/([^?]+)/);
+    if (repoMatch) {
+      this._activatePanel('repo', { repoName: decodeURIComponent(repoMatch[1]) });
+      return;
+    }
+
+    const panelMatch = hash.match(/^#([a-z]+)/);
+    if (panelMatch && PANEL_TAGS[panelMatch[1]]) {
+      this._activatePanel(panelMatch[1]);
+    } else {
+      this._activatePanel('dashboard');
+    }
   }
 
   private async _loadLayout(): Promise<LayoutState | null> {
@@ -222,6 +293,18 @@ export class TrellisWorkbench extends LitElement {
       this.workspaceRoot = decodeURIComponent(rootMatch[1]);
     }
 
+    const slotMatch = hash.match(/^#slot\/(\d+)/);
+    if (slotMatch) {
+      this._activatePanel('slot', { slotNumber: parseInt(slotMatch[1], 10) });
+      return;
+    }
+
+    const repoMatch = hash.match(/^#repo\/([^?]+)/);
+    if (repoMatch) {
+      this._activatePanel('repo', { repoName: decodeURIComponent(repoMatch[1]) });
+      return;
+    }
+
     const panelMatch = hash.match(/^#([a-z]+)/);
     if (panelMatch && PANEL_TAGS[panelMatch[1]]) {
       this._activatePanel(panelMatch[1]);
@@ -230,13 +313,13 @@ export class TrellisWorkbench extends LitElement {
     }
   }
 
-  private _activatePanel(key: string) {
+  private _activatePanel(key: string, extraProps?: Record<string, unknown>) {
     if (PANEL_TAGS[key]) {
       const root = this.shadowRoot!.querySelector('.workbench-root');
       const target = root?.querySelector(`[data-component-id="${key}"]`) ?? root;
       target?.dispatchEvent(new CustomEvent('pages-dock-toggle', {
         bubbles: true, composed: true,
-        detail: { panelId: key, visible: true },
+        detail: { panelId: key, visible: true, extraProps },
       }));
     }
     this._pushUIStateImmediate();
@@ -332,6 +415,20 @@ export class TrellisWorkbench extends LitElement {
   }
 
   override render() {
-    return html`<div class="workbench-root"></div>`;
+    return html`
+      <div class="space-bar">
+        <trellis-space-switcher
+          .root=${this.workspaceRoot}
+          @space-change=${this._onSpaceChange}
+        ></trellis-space-switcher>
+      </div>
+      <div class="workbench-root"></div>
+    `;
+  }
+
+  private _onSpaceChange(e: CustomEvent) {
+    const root = e.detail.root;
+    this.workspaceRoot = root;
+    location.hash = `#?root=${encodeURIComponent(root)}`;
   }
 }

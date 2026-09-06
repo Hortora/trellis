@@ -56,6 +56,6 @@ public class CoordinatorEventObserver {
 
     private void dispatch(CoordinatorEvent event) {
         ring.add(event);
-        accumulator.collect(new LevelEvent<>(event, event.timestamp().toEpochMilli(), COORDINATOR_LEVEL));
+        accumulator.collect(new LevelEvent<>(event, event.timestamp().toEpochMilli(), COORDINATOR_LEVEL, null));
     }
 }

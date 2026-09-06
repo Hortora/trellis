@@ -9,5 +9,10 @@ public record SlotInfo(
         String issue,
         SlotStatus status,
         boolean isEpic,
-        List<String> repos
+        List<String> repos,
+        String slug,
+        String title,
+        String description,
+        String whatToDo,
+        List<Integer> covers
 ) {}
