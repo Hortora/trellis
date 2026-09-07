@@ -15,7 +15,7 @@ interface SlotInfo {
   number: number;
   path: string;
   issue: string;
-  status: 'ACTIVE' | 'READY_TO_LAND' | 'ARCHIVED';
+  status: 'ACTIVE' | 'PAUSED' | 'READY' | 'LANDED' | 'STALE' | 'ABANDONED' | 'ARCHIVED';
   isEpic: boolean;
   repos: string[];
   slug: string | null;
@@ -58,7 +58,11 @@ interface WorkspaceModel {
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: '#4ade80',
-  READY_TO_LAND: '#facc15',
+  PAUSED: '#f59e0b',
+  READY: '#facc15',
+  LANDED: '#3b82f6',
+  STALE: '#f97316',
+  ABANDONED: '#ef4444',
   ARCHIVED: '#6b7280',
 };
 
@@ -74,6 +78,7 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _showRecent = false;
   @state() private _modal: { type: 'slot'; slotNumber: number; label: string } | { type: 'repo'; repoName: string; label: string } | null = null;
   @state() private _hideArchived = true;
+  @state() private _statusFilter: string | null = null;
   @state() private _hoverSlot: number | null = null;
   private _lastScannedRoot = '';
   private _savedScrollTop = 0;
@@ -255,18 +260,26 @@ export class TrellisOrgDashboard extends LitElement {
   private _renderSlots(slots: SlotInfo[]) {
     if (slots.length === 0) return nothing;
     const archivedCount = slots.filter(s => s.status === 'ARCHIVED').length;
-    const filtered = this._hideArchived ? slots.filter(s => s.status !== 'ARCHIVED') : slots;
+    let filtered = this._hideArchived ? slots.filter(s => s.status !== 'ARCHIVED') : slots;
+    if (this._statusFilter) {
+      filtered = filtered.filter(s => s.status === this._statusFilter);
+    }
+    const statusPills = ['PAUSED', 'LANDED', 'STALE', 'ABANDONED'] as const;
     return html`
       <div class="section">
         <h2>Slots <span class="count">${filtered.length}${this._hideArchived && archivedCount > 0 ? ` / ${slots.length}` : ''}</span></h2>
-        ${archivedCount > 0 ? html`
-          <div class="filters">
-            <span class="pill ${this._hideArchived ? 'active' : ''}"
-                  @click=${() => { this._hideArchived = !this._hideArchived; }}>
-              ${this._hideArchived ? 'Show archived' : 'Hide archived'} (${archivedCount})
+        <div class="filters">
+          <span class="pill ${this._hideArchived ? 'active' : ''}"
+                @click=${() => { this._hideArchived = !this._hideArchived; }}>
+            ${this._hideArchived ? 'Show archived' : 'Hide archived'} (${archivedCount})
+          </span>
+          ${statusPills.map(s => html`
+            <span class="pill ${this._statusFilter === s ? 'active' : ''}"
+                  @click=${() => { this._statusFilter = this._statusFilter === s ? null : s; }}>
+              ${s.replace('_', ' ')}
             </span>
-          </div>
-        ` : nothing}
+          `)}
+        </div>
         <div class="grid">${filtered.map(s => html`
           <div class="card ${this._hoverSlot === s.number && (s.description || s.whatToDo) ? 'expanded' : ''}" style="cursor:pointer"
                @click=${() => this._openSlot(s.number)}

@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 public class WorkspaceScanner {
 
     private static final Logger LOG = Logger.getLogger(WorkspaceScanner.class);
+
     private static final Pattern ISSUE_PATTERN = Pattern.compile("^([\\w-]+/[\\w-]+#\\d+)");
     private static final Pattern CURRENT_BATCH_PATTERN = Pattern.compile("^Current batch:\\s*(\\d+)");
     private static final Pattern CURRENT_ISSUE_PATTERN = Pattern.compile("^Current issue:\\s*(.+)");
@@ -167,6 +168,7 @@ public class WorkspaceScanner {
         var covers = new ArrayList<Integer>();
         var descLines = new ArrayList<String>();
         var whatToDoLines = new ArrayList<String>();
+        String slotState = null;
         String currentSection = "";
 
         for (String line : lines) {
@@ -211,6 +213,12 @@ public class WorkspaceScanner {
                     Matcher m = REPO_LINE_PATTERN.matcher(trimmed);
                     if (m.find()) repos.add(m.group(1));
                 }
+                case "## State", "## Status" -> {
+                    if (trimmed.startsWith("state:") || trimmed.startsWith("status:")) {
+                        int colonIdx = trimmed.indexOf(':');
+                        slotState = trimmed.substring(colonIdx + 1).trim().toLowerCase();
+                    }
+                }
                 default -> {}
             }
 
@@ -226,8 +234,15 @@ public class WorkspaceScanner {
 
         if (issue == null) return null;
 
-        boolean readyToLand = Files.exists(slotDir.resolve(".phase-a-complete"));
-        SlotStatus status = readyToLand ? SlotStatus.READY_TO_LAND : SlotStatus.ACTIVE;
+        SlotStatus status = switch (slotState != null ? slotState : "active") {
+            case "paused" -> SlotStatus.PAUSED;
+            case "ready" -> SlotStatus.READY;
+            case "landed" -> SlotStatus.LANDED;
+            case "stale" -> SlotStatus.STALE;
+            case "abandoned" -> SlotStatus.ABANDONED;
+            case "archived" -> SlotStatus.ARCHIVED;
+            default -> SlotStatus.ACTIVE;
+        };
 
         String description = descLines.isEmpty() ? null : String.join(" ", descLines);
         String whatToDo = whatToDoLines.isEmpty() ? null : String.join(" ", whatToDoLines);

@@ -9,7 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceScannerTest {
 
@@ -148,7 +151,7 @@ class WorkspaceScannerTest {
     }
 
     @Test
-    void scanDetectsReadyToLandSlot() throws IOException {
+    void scanDetectsReadySlot() throws IOException {
         createSlot(45, """
                 # Slot 45 — issue-100-feature
                 
@@ -156,15 +159,17 @@ class WorkspaceScannerTest {
                 casehubio/blocks-ui#100
                 Covers: 100
                 
+                ## State
+                state: ready
+                
                 ## Repos
                 - blocks-ui (primary)
                 - chat-app
                 """);
-        Files.createFile(root.resolve("slots/45/.phase-a-complete"));
 
         var model = scanner.scan(root);
 
-        assertEquals(SlotStatus.READY_TO_LAND, model.slots().getFirst().status());
+        assertEquals(SlotStatus.READY, model.slots().getFirst().status());
         assertFalse(model.slots().getFirst().isEpic());
         assertEquals(List.of("blocks-ui", "chat-app"), model.slots().getFirst().repos());
     }
@@ -303,6 +308,72 @@ class WorkspaceScannerTest {
     }
 
     // --- Model properties ---
+
+
+    @Test
+    void scanParsesSlotWithPausedStatus() throws IOException {
+        createSlot(1, """
+                      # Slot 1
+                      slug: test-slot
+                      title: Test slot
+                      
+                      ## Issue
+                      org/repo#1
+                      
+                      ## Status
+                      status: paused
+                      
+                      ## Repos
+                      - repo-a
+                      """);
+
+        var model = scanner.scan(root);
+
+        assertEquals(1, model.slots().size());
+        assertEquals(SlotStatus.PAUSED, model.slots().getFirst().status());
+    }
+
+    @Test
+    void scanDefaultsToActiveWhenNoStatusSection() throws IOException {
+        createSlot(1, """
+                      # Slot 1
+                      slug: test-slot
+                      title: Test slot
+                      
+                      ## Issue
+                      org/repo#1
+                      
+                      ## Repos
+                      - repo-a
+                      """);
+
+        var model = scanner.scan(root);
+
+        assertEquals(1, model.slots().size());
+        assertEquals(SlotStatus.ACTIVE, model.slots().getFirst().status());
+    }
+
+    @Test
+    void newStateFormatParsesCorrectly() throws IOException {
+        createSlot(1, """
+                      # Slot 1
+                      slug: test-slot
+                      title: Test slot
+                      
+                      ## Issue
+                      org/repo#1
+                      
+                      ## State
+                      state: landed
+                      
+                      ## Repos
+                      - repo-a
+                      """);
+
+        var model = scanner.scan(root);
+
+        assertEquals(SlotStatus.LANDED, model.slots().getFirst().status());
+    }
 
     @Test
     void scanSetsRootAndTimestamp() throws IOException {
