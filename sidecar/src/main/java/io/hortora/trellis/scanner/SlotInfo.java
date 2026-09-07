@@ -14,5 +14,6 @@ public record SlotInfo(
         String title,
         String description,
         String whatToDo,
-        List<Integer> covers
+        List<Integer> covers,
+        PlanProgress planProgress
 ) {}

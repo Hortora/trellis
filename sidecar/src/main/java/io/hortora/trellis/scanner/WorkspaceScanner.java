@@ -27,6 +27,11 @@ public class WorkspaceScanner {
     private static final Pattern PAUSE_BRANCH_PATTERN = Pattern.compile("^\\s*-?\\s*branch:\\s*(.+)");
     private static final Pattern PAUSE_ISSUE_PATTERN = Pattern.compile("^\\s+issue:\\s*(\\d+)");
     private static final Pattern PAUSE_TIME_PATTERN = Pattern.compile("^\\s+paused:\\s*(.+)");
+    private static final Pattern PLAN_ITEM_PATTERN  = Pattern.compile(
+            "^\\s*- \\[([ x])]\\s+([\\w-]+/[\\w-]+#\\d+)\\s+—\\s+(.+?)(?:\\s+←\\s+active)?\\s*$");
+    private static final Pattern PLAN_BATCH_PATTERN = Pattern.compile(
+            "^\\s*###\\s+(.+?)(?:\\s+←\\s+current)?\\s*$");
+
 
     public WorkspaceModel scan(Path root) {
         var repos = scanRepos(root);
@@ -91,7 +96,15 @@ public class WorkspaceScanner {
 
                 try {
                     SlotInfo info = parseSlotFile(slotFile, slotDir, number);
-                    if (info != null) slots.add(info);
+                    if (info != null) {
+                        PlanProgress plan = parsePlanFile(slotDir.resolve(".plan"));
+                        if (plan != null) {
+                            info = new SlotInfo(info.number(), info.path(), info.issue(), info.status(),
+                                    info.isEpic(), info.repos(), info.slug(), info.title(),
+                                    info.description(), info.whatToDo(), info.covers(), plan);
+                        }
+                        slots.add(info);
+                    }
                 } catch (Exception e) {
                     LOG.warnf(e, "Skipping corrupted slot file: %s", slotFile);
                 }
@@ -118,7 +131,7 @@ public class WorkspaceScanner {
                     SlotInfo info = parseSlotFile(slotFile, slotDir, number);
                     if (info != null) {
                         slots.add(new SlotInfo(info.number(), info.path(), info.issue(),
-                                SlotStatus.ARCHIVED, info.isEpic(), info.repos(), info.slug(), info.title(), info.description(), info.whatToDo(), info.covers()));
+                                SlotStatus.ARCHIVED, info.isEpic(), info.repos(), info.slug(), info.title(), info.description(), info.whatToDo(), info.covers(), null));
                     }
                 } catch (Exception e) {
                     LOG.warnf(e, "Skipping corrupted attic slot: %s", slotFile);
@@ -247,7 +260,7 @@ public class WorkspaceScanner {
         String description = descLines.isEmpty() ? null : String.join(" ", descLines);
         String whatToDo = whatToDoLines.isEmpty() ? null : String.join(" ", whatToDoLines);
 
-        return new SlotInfo(number, slotDir, issue, status, isEpic, List.copyOf(repos), slug, title, description, whatToDo, List.copyOf(covers));
+        return new SlotInfo(number, slotDir, issue, status, isEpic, List.copyOf(repos), slug, title, description, whatToDo, List.copyOf(covers), null);
     }
 
     private void scanPauseStack(Path pauseFile, List<PauseEntry> pauses) {
@@ -375,4 +388,63 @@ public class WorkspaceScanner {
         }
         return null;
     }
+
+    PlanProgress parsePlanFile(Path planFile) {
+        if (!Files.isRegularFile(planFile)) {return null;}
+        try {
+            var     lines            = Files.readAllLines(planFile);
+            var     batches          = new ArrayList<PlanBatch>();
+            var     currentItems     = new ArrayList<PlanItem>();
+            String  currentBatchName = null;
+            String  activeIssue      = null;
+            int     completed        = 0;
+            int     total            = 0;
+            boolean inQueue          = false;
+
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.equals("## Queue")) {
+                    inQueue = true;
+                    continue;
+                }
+                if (inQueue && trimmed.startsWith("## ")) {break;}
+                if (!inQueue) {continue;}
+
+                Matcher batchMatcher = PLAN_BATCH_PATTERN.matcher(trimmed);
+                if (batchMatcher.matches()) {
+                    if (!currentItems.isEmpty() || currentBatchName != null) {
+                        batches.add(new PlanBatch(currentBatchName, List.copyOf(currentItems)));
+                        currentItems.clear();
+                    }
+                    currentBatchName = batchMatcher.group(1).trim();
+                    continue;
+                }
+
+                Matcher itemMatcher = PLAN_ITEM_PATTERN.matcher(trimmed);
+                if (itemMatcher.matches()) {
+                    String rawTitle = itemMatcher.group(3);
+                    if (rawTitle.contains("(epic)")) continue;
+                    boolean done   = "x".equals(itemMatcher.group(1));
+                    String  ref    = itemMatcher.group(2);
+                    String  title  = rawTitle.trim();
+                    boolean active = trimmed.contains("← active");
+                    currentItems.add(new PlanItem(ref, title, done, active));
+                    if (done) {completed++;}
+                    total++;
+                    if (active) {activeIssue = ref;}
+                }
+            }
+
+            if (!currentItems.isEmpty() || currentBatchName != null) {
+                batches.add(new PlanBatch(currentBatchName, List.copyOf(currentItems)));
+            }
+
+            if (total == 0) {return null;}
+            return new PlanProgress(List.copyOf(batches), activeIssue, completed, total);
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to read plan file: %s", planFile);
+            return null;
+        }
+    }
+
 }

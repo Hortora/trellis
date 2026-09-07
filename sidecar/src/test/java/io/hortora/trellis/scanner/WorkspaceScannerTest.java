@@ -12,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceScannerTest {
@@ -406,6 +407,134 @@ class WorkspaceScannerTest {
     }
 
     // --- Helpers ---
+
+
+// --- Plan parsing ---
+
+    @Test
+    void scanParsesMultiBatchPlan() throws IOException {
+        createSlot(5, """
+                      # Slot 5
+                      slug: issue-468-throttle
+                      
+                      ## Issue
+                      casehubio/parent#468
+                      
+                      ## Repos
+                      - engine
+                      """);
+        Files.writeString(root.resolve("slots/5/.plan"), """
+                                                         # Work Plan — issue-468
+                                                         
+                                                         ## State
+                                                         state: active
+                                                         
+                                                         ## Queue
+                                                         - [ ] casehubio/parent#468 — Foundation Throttle (epic)
+                                                           ### Batch 1 — Shared contract
+                                                           - [x] casehubio/engine#1043 — Concurrency throttle
+                                                           - [ ] casehubio/engine#1044 — Watchdog bridge ← active
+                                                           ### Batch 2 — Session-level
+                                                           - [ ] casehubio/claudony#203 — Session throttle
+                                                         """);
+
+        var model = scanner.scan(root);
+
+        var slot = model.slots().getFirst();
+        assertNotNull(slot.planProgress());
+        var plan = slot.planProgress();
+        assertEquals(2, plan.batches().size());
+        assertEquals("Batch 1 — Shared contract", plan.batches().get(0).name());
+        assertEquals(2, plan.batches().get(0).items().size());
+        assertTrue(plan.batches().get(0).items().get(0).done());
+        assertFalse(plan.batches().get(0).items().get(1).done());
+        assertTrue(plan.batches().get(0).items().get(1).active());
+        assertEquals("casehubio/engine#1044", plan.batches().get(0).items().get(1).ref());
+        assertEquals("Watchdog bridge", plan.batches().get(0).items().get(1).title());
+        assertEquals("Batch 2 — Session-level", plan.batches().get(1).name());
+        assertEquals(1, plan.batches().get(1).items().size());
+        assertEquals("casehubio/engine#1044", plan.activeIssue());
+        assertEquals(1, plan.completed());
+        assertEquals(3, plan.total());
+    }
+
+    @Test
+    void scanParsesPlanWithNoBatches() throws IOException {
+        createSlot(3, """
+                      # Slot 3
+                      
+                      ## Issue
+                      org/repo#100
+                      
+                      ## Repos
+                      - engine
+                      """);
+        Files.writeString(root.resolve("slots/3/.plan"), """
+                                                         # Work Plan — issue-100
+                                                         
+                                                         ## State
+                                                         state: active
+                                                         
+                                                         ## Queue
+                                                         - [ ] casehubio/engine#189 — Normative interop ← active
+                                                         """);
+
+        var model = scanner.scan(root);
+
+        var plan = model.slots().getFirst().planProgress();
+        assertNotNull(plan);
+        assertEquals(1, plan.batches().size());
+        assertNull(plan.batches().getFirst().name());
+        assertEquals(1, plan.batches().getFirst().items().size());
+        assertTrue(plan.batches().getFirst().items().getFirst().active());
+        assertEquals(0, plan.completed());
+        assertEquals(1, plan.total());
+    }
+
+    @Test
+    void scanReturnsNullPlanWhenNoPlanFile() throws IOException {
+        createSlot(7, """
+                      # Slot 7
+                      
+                      ## Issue
+                      org/repo#50
+                      
+                      ## Repos
+                      - engine
+                      """);
+
+        var model = scanner.scan(root);
+
+        assertNull(model.slots().getFirst().planProgress());
+    }
+
+    @Test
+    void scanParsesPlanWithAllItemsDone() throws IOException {
+        createSlot(4, """
+                      # Slot 4
+                      
+                      ## Issue
+                      org/repo#30
+                      
+                      ## Repos
+                      - engine
+                      """);
+        Files.writeString(root.resolve("slots/4/.plan"), """
+                                                         # Work Plan
+                                                         
+                                                         ## Queue
+                                                         - [x] org/repo#31 — First
+                                                         - [x] org/repo#32 — Second
+                                                         """);
+
+        var model = scanner.scan(root);
+
+        var plan = model.slots().getFirst().planProgress();
+        assertNotNull(plan);
+        assertNull(plan.activeIssue());
+        assertEquals(2, plan.completed());
+        assertEquals(2, plan.total());
+    }
 
     private Path createRepo(String name) throws IOException {
         var repoPath = root.resolve(name);

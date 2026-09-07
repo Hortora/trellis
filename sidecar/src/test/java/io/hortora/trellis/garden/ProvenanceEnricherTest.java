@@ -19,7 +19,7 @@ class ProvenanceEnricherTest {
     void enrichMatchesSlotByIssueRef() {
         var watcher = mock(FileWatcherService.class);
         var slot = new SlotInfo(3, Path.of("/tmp/slot-3"), "Hortora/trellis#14",
-                SlotStatus.ACTIVE, false, List.of("trellis", "engine"), "issue-14-some-feature", "Some Feature", "Feature description", "What to do text", List.of(14));
+                SlotStatus.ACTIVE, false, List.of("trellis", "engine"), "issue-14-some-feature", "Some Feature", "Feature description", "What to do text", List.of(14), null);
         var model = new WorkspaceModel(Path.of("/tmp"), Instant.now(),
                 List.of(), List.of(slot), List.of(), List.of());
         when(watcher.allModels()).thenReturn(List.of(model));
