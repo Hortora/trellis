@@ -166,6 +166,7 @@ export class TrellisRepoDetail extends LitElement {
             fontSize: 13,
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
           });
+          setTimeout(() => this._focusTerminal(), 500);
           if (this._mousedownHandler) {
             document.removeEventListener('mousedown', this._mousedownHandler);
           }
@@ -187,9 +188,13 @@ export class TrellisRepoDetail extends LitElement {
 
   static override shadowRootOptions = { ...LitElement.shadowRootOptions, delegatesFocus: true };
 
-  private _focusTerminal() {
+  private _focusTerminal(retries = 5) {
     const el = this.renderRoot.querySelector('#repo-terminal') as any;
-    if (el?._terminal) el._terminal.focus();
+    if (el?._terminal) {
+      el._terminal.focus();
+    } else if (retries > 0) {
+      setTimeout(() => this._focusTerminal(retries - 1), 200);
+    }
   }
 
   private _handleTerminalEvent(e: CustomEvent) {
