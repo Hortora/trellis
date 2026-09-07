@@ -9,6 +9,7 @@ interface PlanItem {
   title: string;
   done: boolean;
   active: boolean;
+  group?: boolean;
   children?: PlanItem[];
 }
 

@@ -397,13 +397,12 @@ public class WorkspaceScanner {
             String currentBatchName = null;
             String activeIssue = null;
             boolean inQueue = false;
-            boolean hasBatchHeaders = lines.stream().anyMatch(l -> inQueueSection(l, lines) && PLAN_BATCH_PATTERN.matcher(l.trim()).matches());
-
             var indents = new ArrayList<Integer>();
             var refs = new ArrayList<String>();
             var titles = new ArrayList<String>();
             var dones = new ArrayList<Boolean>();
             var actives = new ArrayList<Boolean>();
+            var groups = new ArrayList<Boolean>();
 
             for (String line : lines) {
                 String trimmed = line.trim();
@@ -414,8 +413,8 @@ public class WorkspaceScanner {
                 Matcher batchMatcher = PLAN_BATCH_PATTERN.matcher(trimmed);
                 if (batchMatcher.matches()) {
                     if (!indents.isEmpty() || currentBatchName != null) {
-                        batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives))));
-                        indents.clear(); refs.clear(); titles.clear(); dones.clear(); actives.clear();
+                        batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives, groups))));
+                        indents.clear(); refs.clear(); titles.clear(); dones.clear(); actives.clear(); groups.clear();
                     }
                     currentBatchName = batchMatcher.group(1).trim();
                     continue;
@@ -424,19 +423,19 @@ public class WorkspaceScanner {
                 Matcher itemMatcher = PLAN_ITEM_PATTERN.matcher(line);
                 if (itemMatcher.matches()) {
                     String rawTitle = itemMatcher.group(3);
-                    if (rawTitle.contains("(epic)") && hasBatchHeaders) continue;
                     int indent = line.indexOf('-');
                     String title = rawTitle.replaceAll("\\(epic\\)", "").trim();
                     boolean done = "x".equals(itemMatcher.group(1));
                     String ref = itemMatcher.group(2);
                     boolean active = trimmed.contains("← active");
-                    indents.add(indent); refs.add(ref); titles.add(title); dones.add(done); actives.add(active);
+                    boolean isGroup = rawTitle.contains("(epic)");
+                    indents.add(indent); refs.add(ref); titles.add(title); dones.add(done); actives.add(active); groups.add(isGroup);
                     if (active) activeIssue = ref;
                 }
             }
 
             if (!indents.isEmpty() || currentBatchName != null) {
-                batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives))));
+                batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives, groups))));
             }
 
             int[] counts = countLeaves(batches);
@@ -448,29 +447,20 @@ public class WorkspaceScanner {
         }
     }
 
-    private boolean inQueueSection(String line, List<String> allLines) {
-        boolean inQueue = false;
-        for (String l : allLines) {
-            if (l.trim().equals("## Queue")) { inQueue = true; continue; }
-            if (inQueue && l.trim().startsWith("## ")) return false;
-            if (l == line) return inQueue;
-        }
-        return false;
+
+    private List<PlanItem> buildItemTree(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives, List<Boolean> groups) {
+        return buildItemTreeRange(indents, refs, titles, dones, actives, groups, 0, indents.size());
     }
 
-    private List<PlanItem> buildItemTree(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives) {
-        return buildItemTreeRange(indents, refs, titles, dones, actives, 0, indents.size());
-    }
-
-    private List<PlanItem> buildItemTreeRange(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives, int from, int to) {
+    private List<PlanItem> buildItemTreeRange(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives, List<Boolean> groups, int from, int to) {
         var result = new ArrayList<PlanItem>();
         int i = from;
         while (i < to) {
             int myIndent = indents.get(i);
             int j = i + 1;
             while (j < to && indents.get(j) > myIndent) j++;
-            var children = (j > i + 1) ? buildItemTreeRange(indents, refs, titles, dones, actives, i + 1, j) : List.<PlanItem>of();
-            result.add(new PlanItem(refs.get(i), titles.get(i), dones.get(i), actives.get(i), children));
+            var children = (j > i + 1) ? buildItemTreeRange(indents, refs, titles, dones, actives, groups, i + 1, j) : List.<PlanItem>of();
+            result.add(new PlanItem(refs.get(i), titles.get(i), dones.get(i), actives.get(i), groups.get(i), children));
             i = j;
         }
         return result;
@@ -488,7 +478,10 @@ public class WorkspaceScanner {
     private int[] countItemLeaves(List<PlanItem> items) {
         int completed = 0, total = 0;
         for (var item : items) {
-            if (item.children().isEmpty()) {
+            if (item.isGroup()) {
+                int[] c = countItemLeaves(item.children());
+                completed += c[0]; total += c[1];
+            } else if (item.children().isEmpty()) {
                 total++;
                 if (item.done()) completed++;
             } else {

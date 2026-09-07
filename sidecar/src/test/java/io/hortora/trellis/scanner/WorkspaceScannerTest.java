@@ -423,36 +423,31 @@ class WorkspaceScannerTest {
                       ## Repos
                       - engine
                       """);
-        Files.writeString(root.resolve("slots/5/.plan"), """
-                                                         # Work Plan — issue-468
-                                                         
-                                                         ## State
-                                                         state: active
-                                                         
-                                                         ## Queue
-                                                         - [ ] casehubio/parent#468 — Foundation Throttle (epic)
-                                                           ### Batch 1 — Shared contract
-                                                           - [x] casehubio/engine#1043 — Concurrency throttle
-                                                           - [ ] casehubio/engine#1044 — Watchdog bridge ← active
-                                                           ### Batch 2 — Session-level
-                                                           - [ ] casehubio/claudony#203 — Session throttle
-                                                         """);
+        Files.writeString(root.resolve("slots/5/.plan"),
+                "# Work Plan\n\n## Queue\n"
+                + "- [ ] casehubio/parent#468 — Foundation Throttle (epic)\n"
+                + "  ### Batch 1 — Shared contract\n"
+                + "  - [x] casehubio/engine#1043 — Concurrency throttle\n"
+                + "  - [ ] casehubio/engine#1044 — Watchdog bridge ← active\n"
+                + "  ### Batch 2 — Session-level\n"
+                + "  - [ ] casehubio/claudony#203 — Session throttle\n");
 
         var model = scanner.scan(root);
 
         var slot = model.slots().getFirst();
         assertNotNull(slot.planProgress());
         var plan = slot.planProgress();
-        assertEquals(2, plan.batches().size());
-        assertEquals("Batch 1 — Shared contract", plan.batches().get(0).name());
-        assertEquals(2, plan.batches().get(0).items().size());
-        assertTrue(plan.batches().get(0).items().get(0).done());
-        assertFalse(plan.batches().get(0).items().get(1).done());
-        assertTrue(plan.batches().get(0).items().get(1).active());
-        assertEquals("casehubio/engine#1044", plan.batches().get(0).items().get(1).ref());
-        assertEquals("Watchdog bridge", plan.batches().get(0).items().get(1).title());
-        assertEquals("Batch 2 — Session-level", plan.batches().get(1).name());
-        assertEquals(1, plan.batches().get(1).items().size());
+        assertEquals(3, plan.batches().size());
+        assertNull(plan.batches().get(0).name());
+        assertEquals(1, plan.batches().get(0).items().size());
+        assertEquals("casehubio/parent#468", plan.batches().get(0).items().get(0).ref());
+        assertEquals("Foundation Throttle", plan.batches().get(0).items().get(0).title());
+        assertEquals("Batch 1 — Shared contract", plan.batches().get(1).name());
+        assertEquals(2, plan.batches().get(1).items().size());
+        assertTrue(plan.batches().get(1).items().get(0).done());
+        assertTrue(plan.batches().get(1).items().get(1).active());
+        assertEquals("Batch 2 — Session-level", plan.batches().get(2).name());
+        assertEquals(1, plan.batches().get(2).items().size());
         assertEquals("casehubio/engine#1044", plan.activeIssue());
         assertEquals(1, plan.completed());
         assertEquals(3, plan.total());
