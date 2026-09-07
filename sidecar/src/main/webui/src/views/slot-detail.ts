@@ -4,6 +4,25 @@ import '../components/terminal-tab-group';
 import '../components/agent-status-badge';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 
+interface PlanItem {
+  ref: string;
+  title: string;
+  done: boolean;
+  active: boolean;
+}
+
+interface PlanBatch {
+  name: string | null;
+  items: PlanItem[];
+}
+
+interface PlanProgress {
+  batches: PlanBatch[];
+  activeIssue: string | null;
+  completed: number;
+  total: number;
+}
+
 interface SlotInfo {
   number: number;
   path: string;
@@ -14,6 +33,7 @@ interface SlotInfo {
   slug: string | null;
   title: string | null;
   covers: number[];
+  planProgress?: PlanProgress;
 }
 
 interface RepoInfo {
@@ -106,6 +126,28 @@ export class TrellisSlotDetail extends LitElement {
 
     .repo-list { list-style: none; padding: 0; margin: 0; }
     .repo-list li { font-size: 0.8rem; color: #ccc; padding: 0.2rem 0; font-family: monospace; }
+
+    .plan-batch { margin-bottom: 0.75rem; }
+    .plan-batch-header {
+      font-size: 0.7rem; color: #777; text-transform: uppercase;
+      letter-spacing: 0.03em; margin-bottom: 0.3rem; margin-top: 0.5rem;
+    }
+    .plan-item {
+      display: flex; align-items: baseline; gap: 0.4rem;
+      font-size: 0.8rem; padding: 0.1rem 0;
+    }
+    .plan-item-done { color: #666; }
+    .plan-item-active { color: #e5e5e5; }
+    .plan-item-pending { color: #555; }
+    .plan-icon-done { color: #86efac; }
+    .plan-icon-active { color: #93c5fd; }
+    .plan-icon-pending { color: #555; }
+    .plan-ref { font-family: monospace; font-size: 0.7rem; flex-shrink: 0; }
+    .plan-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plan-summary {
+      font-size: 0.75rem; color: #888; padding-top: 0.5rem;
+      margin-top: 0.5rem; border-top: 1px solid #333;
+    }
 
     .error { color: #f87171; padding: 1rem; }
     .loading { color: #666; padding: 2rem; text-align: center; }
@@ -270,6 +312,8 @@ export class TrellisSlotDetail extends LitElement {
           ` : nothing}
         </div>
 
+        ${this._renderPlan()}
+
         <div class="sidebar-section">
           <h3>Repos</h3>
           <ul class="repo-list">
@@ -301,6 +345,45 @@ export class TrellisSlotDetail extends LitElement {
                     ${this._renderAgentButtons(s)}
                   </div>
                 `)}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderPlan() {
+    const plan = this._slot?.planProgress;
+    if (!plan) return nothing;
+
+    const currentBatchIdx = plan.batches.findIndex(b =>
+      b.items.some(i => i.active));
+    const totalBatches = plan.batches.filter(b => b.items.length > 0).length;
+
+    const shortRef = (ref: string) => {
+      const parts = ref.split('/');
+      return parts.length > 1 ? parts[parts.length - 1] : ref;
+    };
+
+    return html`
+      <div class="sidebar-section">
+        <h3>Plan</h3>
+        ${plan.batches.map(batch => html`
+          <div class="plan-batch">
+            ${batch.name ? html`<div class="plan-batch-header">${batch.name}</div>` : nothing}
+            ${batch.items.map(item => html`
+              <div class="plan-item ${item.done ? 'plan-item-done' : item.active ? 'plan-item-active' : 'plan-item-pending'}">
+                <span class="${item.done ? 'plan-icon-done' : item.active ? 'plan-icon-active' : 'plan-icon-pending'}">
+                  ${item.done ? '✓' : item.active ? '●' : '○'}
+                </span>
+                <span class="plan-ref">${shortRef(item.ref)}</span>
+                <span class="plan-title">${item.title}</span>
+              </div>
+            `)}
+          </div>
+        `)}
+        <div class="plan-summary">
+          ${plan.completed}/${plan.total} done${totalBatches > 1
+            ? ` · Batch ${currentBatchIdx >= 0 ? currentBatchIdx + 1 : totalBatches} of ${totalBatches}`
+            : ''}
         </div>
       </div>
     `;

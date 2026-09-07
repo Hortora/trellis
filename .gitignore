@@ -25,3 +25,4 @@ package-lock.json
 # Workspace
 wksp
 .mvn/maven.config
+shell/${java.io.tmpdir}/
