@@ -9,6 +9,7 @@ interface PlanItem {
   title: string;
   done: boolean;
   active: boolean;
+  children?: PlanItem[];
 }
 
 interface PlanBatch {
@@ -355,13 +356,8 @@ export class TrellisSlotDetail extends LitElement {
     if (!plan) return nothing;
 
     const currentBatchIdx = plan.batches.findIndex(b =>
-      b.items.some(i => i.active));
+      this._hasActiveItem(b.items));
     const totalBatches = plan.batches.filter(b => b.items.length > 0).length;
-
-    const shortRef = (ref: string) => {
-      const parts = ref.split('/');
-      return parts.length > 1 ? parts[parts.length - 1] : ref;
-    };
 
     return html`
       <div class="sidebar-section">
@@ -369,15 +365,7 @@ export class TrellisSlotDetail extends LitElement {
         ${plan.batches.map(batch => html`
           <div class="plan-batch">
             ${batch.name ? html`<div class="plan-batch-header">${batch.name}</div>` : nothing}
-            ${batch.items.map(item => html`
-              <div class="plan-item ${item.done ? 'plan-item-done' : item.active ? 'plan-item-active' : 'plan-item-pending'}">
-                <span class="${item.done ? 'plan-icon-done' : item.active ? 'plan-icon-active' : 'plan-icon-pending'}">
-                  ${item.done ? '✓' : item.active ? '●' : '○'}
-                </span>
-                <span class="plan-ref">${shortRef(item.ref)}</span>
-                <span class="plan-title">${item.title}</span>
-              </div>
-            `)}
+            ${this._renderPlanItems(batch.items, 0)}
           </div>
         `)}
         <div class="plan-summary">
@@ -387,6 +375,32 @@ export class TrellisSlotDetail extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private _renderPlanItems(items: PlanItem[], depth: number): unknown {
+    const shortRef = (ref: string) => {
+      const parts = ref.split('/');
+      return parts.length > 1 ? parts[parts.length - 1] : ref;
+    };
+
+    return items.map(item => {
+      const hasChildren = item.children && item.children.length > 0;
+      return html`
+        <div class="plan-item ${item.done ? 'plan-item-done' : item.active ? 'plan-item-active' : 'plan-item-pending'}"
+             style="padding-left: ${depth * 0.75}rem">
+          <span class="${item.done ? 'plan-icon-done' : item.active ? 'plan-icon-active' : 'plan-icon-pending'}">
+            ${item.done ? '✓' : item.active ? '●' : '○'}
+          </span>
+          <span class="plan-ref">${shortRef(item.ref)}</span>
+          <span class="plan-title">${item.title}</span>
+        </div>
+        ${hasChildren ? this._renderPlanItems(item.children!, depth + 1) : nothing}
+      `;
+    });
+  }
+
+  private _hasActiveItem(items: PlanItem[]): boolean {
+    return items.some(i => i.active || (i.children && this._hasActiveItem(i.children)));
   }
 
   private async _loadSlot() {

@@ -1,3 +1,5 @@
 package io.hortora.trellis.scanner;
 
-public record PlanItem(String ref, String title, boolean done, boolean active) {}
+import java.util.List;
+
+public record PlanItem(String ref, String title, boolean done, boolean active, List<PlanItem> children) {}

@@ -536,6 +536,50 @@ class WorkspaceScannerTest {
         assertEquals(2, plan.total());
     }
 
+    @Test
+    void scanParsesNestedEpicWithoutBatches() throws IOException {
+        createSlot(8, """
+                      # Slot 8
+
+                      ## Issue
+                      org/repo#100
+
+                      ## Repos
+                      - engine
+                      """);
+        Files.writeString(root.resolve("slots/8/.plan"), """
+                # Work Plan
+
+                ## Queue
+                - [ ] org/repo#100 — Epic A (epic)
+                  - [x] org/repo#200 — First task
+                  - [ ] org/repo#201 — Second task ← active
+                - [ ] org/repo#101 — Epic B (epic)
+                  - [ ] org/repo#202 — Third task
+                  - [ ] org/repo#203 — Fourth task
+                """);
+
+        var model = scanner.scan(root);
+
+        var plan = model.slots().getFirst().planProgress();
+        assertNotNull(plan);
+        assertEquals(1, plan.batches().size());
+        assertNull(plan.batches().getFirst().name());
+        var items = plan.batches().getFirst().items();
+        assertEquals(2, items.size());
+        assertEquals("org/repo#100", items.get(0).ref());
+        assertEquals("Epic A", items.get(0).title());
+        assertEquals(2, items.get(0).children().size());
+        assertTrue(items.get(0).children().get(0).done());
+        assertEquals("org/repo#200", items.get(0).children().get(0).ref());
+        assertTrue(items.get(0).children().get(1).active());
+        assertEquals("org/repo#101", items.get(1).ref());
+        assertEquals(2, items.get(1).children().size());
+        assertEquals("org/repo#201", plan.activeIssue());
+        assertEquals(1, plan.completed());
+        assertEquals(4, plan.total());
+    }
+
     private Path createRepo(String name) throws IOException {
         var repoPath = root.resolve(name);
         Files.createDirectories(repoPath.resolve(".git/refs/heads"));

@@ -390,61 +390,113 @@ public class WorkspaceScanner {
     }
 
     PlanProgress parsePlanFile(Path planFile) {
-        if (!Files.isRegularFile(planFile)) {return null;}
+        if (!Files.isRegularFile(planFile)) return null;
         try {
-            var     lines            = Files.readAllLines(planFile);
-            var     batches          = new ArrayList<PlanBatch>();
-            var     currentItems     = new ArrayList<PlanItem>();
-            String  currentBatchName = null;
-            String  activeIssue      = null;
-            int     completed        = 0;
-            int     total            = 0;
-            boolean inQueue          = false;
+            var lines = Files.readAllLines(planFile);
+            var batches = new ArrayList<PlanBatch>();
+            String currentBatchName = null;
+            String activeIssue = null;
+            boolean inQueue = false;
+            boolean hasBatchHeaders = lines.stream().anyMatch(l -> inQueueSection(l, lines) && PLAN_BATCH_PATTERN.matcher(l.trim()).matches());
+
+            var indents = new ArrayList<Integer>();
+            var refs = new ArrayList<String>();
+            var titles = new ArrayList<String>();
+            var dones = new ArrayList<Boolean>();
+            var actives = new ArrayList<Boolean>();
 
             for (String line : lines) {
                 String trimmed = line.trim();
-                if (trimmed.equals("## Queue")) {
-                    inQueue = true;
-                    continue;
-                }
-                if (inQueue && trimmed.startsWith("## ")) {break;}
-                if (!inQueue) {continue;}
+                if (trimmed.equals("## Queue")) { inQueue = true; continue; }
+                if (inQueue && trimmed.startsWith("## ")) break;
+                if (!inQueue) continue;
 
                 Matcher batchMatcher = PLAN_BATCH_PATTERN.matcher(trimmed);
                 if (batchMatcher.matches()) {
-                    if (!currentItems.isEmpty() || currentBatchName != null) {
-                        batches.add(new PlanBatch(currentBatchName, List.copyOf(currentItems)));
-                        currentItems.clear();
+                    if (!indents.isEmpty() || currentBatchName != null) {
+                        batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives))));
+                        indents.clear(); refs.clear(); titles.clear(); dones.clear(); actives.clear();
                     }
                     currentBatchName = batchMatcher.group(1).trim();
                     continue;
                 }
 
-                Matcher itemMatcher = PLAN_ITEM_PATTERN.matcher(trimmed);
+                Matcher itemMatcher = PLAN_ITEM_PATTERN.matcher(line);
                 if (itemMatcher.matches()) {
                     String rawTitle = itemMatcher.group(3);
-                    if (rawTitle.contains("(epic)")) continue;
-                    boolean done   = "x".equals(itemMatcher.group(1));
-                    String  ref    = itemMatcher.group(2);
-                    String  title  = rawTitle.trim();
+                    if (rawTitle.contains("(epic)") && hasBatchHeaders) continue;
+                    int indent = line.indexOf('-');
+                    String title = rawTitle.replaceAll("\\(epic\\)", "").trim();
+                    boolean done = "x".equals(itemMatcher.group(1));
+                    String ref = itemMatcher.group(2);
                     boolean active = trimmed.contains("← active");
-                    currentItems.add(new PlanItem(ref, title, done, active));
-                    if (done) {completed++;}
-                    total++;
-                    if (active) {activeIssue = ref;}
+                    indents.add(indent); refs.add(ref); titles.add(title); dones.add(done); actives.add(active);
+                    if (active) activeIssue = ref;
                 }
             }
 
-            if (!currentItems.isEmpty() || currentBatchName != null) {
-                batches.add(new PlanBatch(currentBatchName, List.copyOf(currentItems)));
+            if (!indents.isEmpty() || currentBatchName != null) {
+                batches.add(new PlanBatch(currentBatchName, List.copyOf(buildItemTree(indents, refs, titles, dones, actives))));
             }
 
-            if (total == 0) {return null;}
-            return new PlanProgress(List.copyOf(batches), activeIssue, completed, total);
+            int[] counts = countLeaves(batches);
+            if (counts[1] == 0) return null;
+            return new PlanProgress(List.copyOf(batches), activeIssue, counts[0], counts[1]);
         } catch (IOException e) {
             LOG.warnf(e, "Failed to read plan file: %s", planFile);
             return null;
         }
+    }
+
+    private boolean inQueueSection(String line, List<String> allLines) {
+        boolean inQueue = false;
+        for (String l : allLines) {
+            if (l.trim().equals("## Queue")) { inQueue = true; continue; }
+            if (inQueue && l.trim().startsWith("## ")) return false;
+            if (l == line) return inQueue;
+        }
+        return false;
+    }
+
+    private List<PlanItem> buildItemTree(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives) {
+        return buildItemTreeRange(indents, refs, titles, dones, actives, 0, indents.size());
+    }
+
+    private List<PlanItem> buildItemTreeRange(List<Integer> indents, List<String> refs, List<String> titles, List<Boolean> dones, List<Boolean> actives, int from, int to) {
+        var result = new ArrayList<PlanItem>();
+        int i = from;
+        while (i < to) {
+            int myIndent = indents.get(i);
+            int j = i + 1;
+            while (j < to && indents.get(j) > myIndent) j++;
+            var children = (j > i + 1) ? buildItemTreeRange(indents, refs, titles, dones, actives, i + 1, j) : List.<PlanItem>of();
+            result.add(new PlanItem(refs.get(i), titles.get(i), dones.get(i), actives.get(i), children));
+            i = j;
+        }
+        return result;
+    }
+
+    private int[] countLeaves(List<PlanBatch> batches) {
+        int completed = 0, total = 0;
+        for (var batch : batches) {
+            int[] c = countItemLeaves(batch.items());
+            completed += c[0]; total += c[1];
+        }
+        return new int[]{completed, total};
+    }
+
+    private int[] countItemLeaves(List<PlanItem> items) {
+        int completed = 0, total = 0;
+        for (var item : items) {
+            if (item.children().isEmpty()) {
+                total++;
+                if (item.done()) completed++;
+            } else {
+                int[] c = countItemLeaves(item.children());
+                completed += c[0]; total += c[1];
+            }
+        }
+        return new int[]{completed, total};
     }
 
 }
