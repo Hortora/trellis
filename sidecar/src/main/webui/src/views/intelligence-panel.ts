@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 interface Finding {
   facet: string;
@@ -55,9 +56,20 @@ export class TrellisIntelligencePanel extends LitElement {
     .summary-bar .count.info { color: var(--vscode-editorInfo-foreground, #60a5fa); }
   `;
 
+  private _unsubWorkspace: (() => void) | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
     this._loadFindings();
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:lifecycle', 'workspace:worklog'],
+      () => this._loadFindings()
+    );
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsubWorkspace?.();
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {

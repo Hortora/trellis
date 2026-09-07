@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/agent-status-badge';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 interface RepoData {
   name: string;
@@ -46,6 +47,7 @@ export class TrellisRepoDetail extends LitElement {
   private _lastLoaded = '';
   private _lastTerminalName = '';
   private _eventSource: EventSource | null = null;
+  private _unsubWorkspace: (() => void) | null = null;
   private _mousedownHandler: ((e: Event) => void) | null = null;
 
   static override styles = css`
@@ -126,11 +128,16 @@ export class TrellisRepoDetail extends LitElement {
     this._loadRepo();
     this._loadTerminal();
     this._subscribeEvents();
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:repos'],
+      () => this._loadRepo()
+    );
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._eventSource?.close();
+    this._unsubWorkspace?.();
     if (this._mousedownHandler) {
       document.removeEventListener('mousedown', this._mousedownHandler);
       this._mousedownHandler = null;

@@ -92,6 +92,8 @@ npm start                                                  # launch app (require
 - `GET /api/dependencies?root=...` — dependency graph with blocked/unblocked/clear classification and critical path; delegates to `DependencyService`
 - Blockers panel (`trellis-blockers-panel`) — three-column kanban view (Blocked/Unblocked/Clear) with critical path banner, scoped to workspace repos
 - `GenerationCounter` — monotonic counter incremented on any state mutation; included in every `trellis_model` response for freshness detection
+- `FileWatcherService` auto-refresh — debounced domain-scoped file watching. `PathDomainClassifier` maps changed paths to domains (`REPOS`, `SLOTS`, `PROTOCOLS`, `LIFECYCLE`, `WORKLOG`). `FileWatcherDebouncer` batches events with idle-wait (3s default) + max cap (20s default). Partial rescans per domain, broadcasts to `workspace:repos/slots/protocols/lifecycle/worklog` SSE topics. Timing configurable via `PreferencesService` (`~/.trellis/preferences.json` `watcher` section)
+- Frontend auto-refresh — `workspace-sse.ts` in `src/services/` provides `subscribeWorkspace(topics, callback)` shared SSE helper. One EventSource for all `workspace:*` topics, client-side topic filtering. All panels (dashboard, repo-detail, slot-detail, protocol-view, backlog, intelligence, blockers) subscribe and re-fetch on change
 - `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile
 - `POST /api/model/ui-state` — frontend pushes UI state (64KB limit), sidecar serves as opaque JSON with staleness detection via `lastPushed` timestamp
 - `control:navigate` SSE topic — command convention for agent-driven UI navigation with correlation-based acknowledgment

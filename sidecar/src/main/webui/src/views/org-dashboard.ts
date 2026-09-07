@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 import './slot-detail.js';
 import './repo-detail.js';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -76,6 +77,7 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _hoverSlot: number | null = null;
   private _lastScannedRoot = '';
   private _savedScrollTop = 0;
+  private _unsubWorkspace: (() => void) | null = null;
 
   static override styles = css`
     :host { display: block; height: 100%; overflow-y: auto; overflow-x: hidden; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif; box-sizing: border-box; }
@@ -405,6 +407,15 @@ export class TrellisOrgDashboard extends LitElement {
       this._root = this.workspaceRoot;
       this._scan();
     }
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:repos', 'workspace:slots', 'workspace:lifecycle'],
+      () => { if (this._root) this._scan(); }
+    );
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsubWorkspace?.();
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {

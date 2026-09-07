@@ -81,6 +81,24 @@ public class PreferencesService {
         return getInt("rateLimitWindowSeconds", 60);
     }
 
+    public int watcherDebounceIdleSeconds() {
+        return getWatcherInt("debounceIdleSeconds", 3);
+    }
+
+    public int watcherDebounceMaxWaitSeconds() {
+        return getWatcherInt("debounceMaxWaitSeconds", 20);
+    }
+
+    public int watcherFallbackRescanSeconds() {
+        return getWatcherInt("fallbackRescanSeconds", 60);
+    }
+
+    private int getWatcherInt(String key, int defaultValue) {
+        var watcher = root.getJsonObject("watcher");
+        if (watcher == null) {return defaultValue;}
+        return watcher.getInt(key, defaultValue);
+    }
+
     private int getInt(String key, int defaultValue) {
         var coord = root.getJsonObject("coordinator");
         if (coord == null) return defaultValue;

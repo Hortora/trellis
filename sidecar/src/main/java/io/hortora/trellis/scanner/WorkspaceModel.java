@@ -11,4 +11,16 @@ public record WorkspaceModel(
         List<SlotInfo> slots,
         List<PauseEntry> pauses,
         List<EpicInfo> epics
-) {}
+) {
+    public WorkspaceModel withRepos(List<RepoInfo> repos) {
+        return new WorkspaceModel(root, scannedAt, repos, slots, pauses, epics);
+    }
+
+    public WorkspaceModel withSlots(List<SlotInfo> slots) {
+        return new WorkspaceModel(root, scannedAt, repos, slots, pauses, epics);
+    }
+
+    public WorkspaceModel withPausesAndEpics(List<PauseEntry> pauses, List<EpicInfo> epics) {
+        return new WorkspaceModel(root, scannedAt, repos, slots, pauses, epics);
+    }
+}

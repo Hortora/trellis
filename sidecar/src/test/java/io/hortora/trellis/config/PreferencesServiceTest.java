@@ -9,7 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class PreferencesServiceTest {
 
@@ -101,5 +102,33 @@ class PreferencesServiceTest {
         var service = new PreferencesService(prefs);
 
         assertEquals(AutonomyLevel.MANUAL, service.autonomyLevel("/ws/unknown"));
+    }
+
+    @Test
+    void readsWatcherConfig() throws IOException {
+        var prefs = tempDir.resolve("preferences.json");
+        Files.writeString(prefs, """
+                                 {
+                                   "watcher": {
+                                     "debounceIdleSeconds": 5,
+                                     "debounceMaxWaitSeconds": 30,
+                                     "fallbackRescanSeconds": 120
+                                   }
+                                 }
+                                 """);
+        var service = new PreferencesService(prefs);
+
+        assertEquals(5, service.watcherDebounceIdleSeconds());
+        assertEquals(30, service.watcherDebounceMaxWaitSeconds());
+        assertEquals(120, service.watcherFallbackRescanSeconds());
+    }
+
+    @Test
+    void watcherConfigDefaultsWhenMissing() {
+        var service = new PreferencesService(tempDir.resolve("nonexistent.json"));
+
+        assertEquals(3, service.watcherDebounceIdleSeconds());
+        assertEquals(20, service.watcherDebounceMaxWaitSeconds());
+        assertEquals(60, service.watcherFallbackRescanSeconds());
     }
 }

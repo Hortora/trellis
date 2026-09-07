@@ -1,6 +1,7 @@
 import { LitElement, html, css, PropertyValues, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { marked } from 'marked';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 interface ProtocolIndex {
   repoName: string;
@@ -208,9 +209,20 @@ export class ProtocolView extends LitElement {
     }
   `;
 
+  private _unsubWorkspace: (() => void) | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
     if (this.workspaceRoot) this._loadRepos();
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:protocols'],
+      () => this._loadRepos()
+    );
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsubWorkspace?.();
   }
 
   override updated(changed: PropertyValues) {

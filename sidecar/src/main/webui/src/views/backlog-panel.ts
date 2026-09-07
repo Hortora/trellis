@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { fromRows, ColumnType, columnId } from '@casehubio/pages-data';
 import type { TypedDataSet, TypedRow, ColumnId } from '@casehubio/pages-data';
@@ -72,11 +73,16 @@ export class TrellisBacklogPanel extends LitElement {
   @state() private _activeItem: BacklogItem | null = null;
 
   private _refreshInterval: ReturnType<typeof setInterval> | null = null;
+  private _unsubWorkspace: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
     this._load();
     this._refreshInterval = setInterval(() => this._load(), 60_000);
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:lifecycle', 'workspace:worklog'],
+      () => this._load()
+    );
   }
 
   override disconnectedCallback() {
@@ -85,6 +91,7 @@ export class TrellisBacklogPanel extends LitElement {
       clearInterval(this._refreshInterval);
       this._refreshInterval = null;
     }
+    this._unsubWorkspace?.();
   }
 
   private async _load() {

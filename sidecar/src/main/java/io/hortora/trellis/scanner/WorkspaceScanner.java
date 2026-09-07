@@ -39,7 +39,7 @@ public class WorkspaceScanner {
                 List.copyOf(pauses), List.copyOf(epics));
     }
 
-    private List<RepoInfo> scanRepos(Path root) {
+    List<RepoInfo> scanRepos(Path root) {
         var repos = new ArrayList<RepoInfo>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(root)) {
             for (Path entry : stream) {
@@ -64,7 +64,7 @@ public class WorkspaceScanner {
         return repos;
     }
 
-    private List<SlotInfo> scanSlots(Path root) {
+    List<SlotInfo> scanSlots(Path root) {
         var slots = new ArrayList<SlotInfo>();
         Path slotsDir = root.resolve("slots");
         if (!Files.isDirectory(slotsDir)) return slots;
@@ -128,7 +128,7 @@ public class WorkspaceScanner {
         }
     }
 
-    private void scanWorkspaces(Path root, List<PauseEntry> pauses, List<EpicInfo> epics) {
+    void scanWorkspaces(Path root, List<PauseEntry> pauses, List<EpicInfo> epics) {
         Path slotsDir = root.resolve("slots");
         if (!Files.isDirectory(slotsDir)) return;
 

@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/terminal-tab-group';
 import '../components/agent-status-badge';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 interface SlotInfo {
   number: number;
@@ -56,6 +57,7 @@ export class TrellisSlotDetail extends LitElement {
   @state() private _evictionCandidates: Set<string> = new Set();
   @state() private _totalAgentMemoryMb = 0;
   private _eventSource: EventSource | null = null;
+  private _unsubWorkspace: (() => void) | null = null;
 
   static override styles = css`
     :host { display: flex; height: 100%; font-family: system-ui, -apple-system, sans-serif; }
@@ -128,6 +130,10 @@ export class TrellisSlotDetail extends LitElement {
     this._loadSlot();
     this._loadTerminals();
     this._subscribeEvents();
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:slots'],
+      () => this._loadSlot()
+    );
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
@@ -143,6 +149,7 @@ export class TrellisSlotDetail extends LitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._eventSource?.close();
+    this._unsubWorkspace?.();
   }
 
   private _subscribeEvents() {

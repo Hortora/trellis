@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 export interface IssueRefData {
   number: number;
@@ -140,10 +141,16 @@ export class TrellisBlockersPanel extends LitElement {
     }
   `;
 
+  private _unsubWorkspace: (() => void) | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
     this._load();
     this._refreshInterval = setInterval(() => this._load(), 60_000);
+    this._unsubWorkspace = subscribeWorkspace(
+      ['workspace:worklog'],
+      () => this._load()
+    );
   }
 
   override disconnectedCallback() {
@@ -152,6 +159,7 @@ export class TrellisBlockersPanel extends LitElement {
       clearInterval(this._refreshInterval);
       this._refreshInterval = null;
     }
+    this._unsubWorkspace?.();
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
