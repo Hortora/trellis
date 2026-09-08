@@ -575,6 +575,31 @@ class WorkspaceScannerTest {
         assertEquals(4, plan.total());
     }
 
+    @Test
+    void scanFindsPlanInWorkspaceSubdirectory() throws IOException {
+        createSlot(9, """
+                      # Slot 9
+
+                      ## Issue
+                      org/repo#200
+
+                      ## Repos
+                      - platform
+                      """);
+        Path wspDir = root.resolve("slots/9/wsp-" + root.getFileName() + "-platform");
+        Files.createDirectories(wspDir);
+        Files.writeString(wspDir.resolve(".plan"),
+                "# Work Plan\n\n## Queue\n"
+                + "- [ ] org/repo#200 — Some feature ← active\n");
+
+        var model = scanner.scan(root);
+
+        var plan = model.slots().getFirst().planProgress();
+        assertNotNull(plan);
+        assertEquals(1, plan.batches().size());
+        assertEquals("org/repo#200", plan.activeIssue());
+    }
+
     private Path createRepo(String name) throws IOException {
         var repoPath = root.resolve(name);
         Files.createDirectories(repoPath.resolve(".git/refs/heads"));

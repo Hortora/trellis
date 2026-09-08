@@ -97,7 +97,7 @@ public class WorkspaceScanner {
                 try {
                     SlotInfo info = parseSlotFile(slotFile, slotDir, number);
                     if (info != null) {
-                        PlanProgress plan = parsePlanFile(slotDir.resolve(".plan"));
+                        PlanProgress plan = resolvePlan(slotDir, info);
                         if (plan != null) {
                             info = new SlotInfo(info.number(), info.path(), info.issue(), info.status(),
                                     info.isEpic(), info.repos(), info.slug(), info.title(),
@@ -385,6 +385,20 @@ public class WorkspaceScanner {
             }
         } catch (IOException e) {
             LOG.debugf(e, "Failed to read git config: %s", config);
+        }
+        return null;
+    }
+
+    private PlanProgress resolvePlan(Path slotDir, SlotInfo info) {
+        PlanProgress plan = parsePlanFile(slotDir.resolve(".plan"));
+        if (plan != null) return plan;
+        if (!info.repos().isEmpty()) {
+            String primary = info.repos().getFirst();
+            Path familyRoot = slotDir.getParent().getParent();
+            String familyName = familyRoot.getFileName().toString();
+            Path wspDir = slotDir.resolve("wsp-" + familyName + "-" + primary);
+            plan = parsePlanFile(wspDir.resolve(".plan"));
+            if (plan != null) return plan;
         }
         return null;
     }
