@@ -18,14 +18,14 @@ import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.input.TextInput;
-import dev.tamboui.widgets.input.TextInputState;
 import dev.tamboui.widgets.paragraph.Paragraph;
 
 import io.hortora.trellis.repl.command.CommandNode;
 import io.hortora.trellis.repl.command.CommandRegistry;
 import io.hortora.trellis.repl.command.CommandResult;
 import io.hortora.trellis.repl.command.HandlerDispatcher;
+import io.hortora.trellis.repl.input.SuggestionInputRenderer;
+import io.hortora.trellis.repl.input.SuggestionInputState;
 import io.hortora.trellis.repl.sidecar.SidecarClient;
 import io.hortora.trellis.repl.soredium.SorediumBridge;
 
@@ -39,7 +39,7 @@ public final class ReplApp {
     private final CommandRegistry registry;
     private final HandlerDispatcher dispatcher;
     private final StatusModel statusModel;
-    private TextInputState inputState = new TextInputState("");
+    private final SuggestionInputState inputState;
     private final List<String> outputLines = new ArrayList<>();
     private boolean running = true;
 
@@ -53,6 +53,7 @@ public final class ReplApp {
         var sidecar = config.sidecarPort() > 0 ? new SidecarClient(config.sidecarPort()) : null;
         this.dispatcher = new HandlerDispatcher(bridge, sidecar, config);
         this.statusModel = new StatusModel(config.repo(), config.slot(), config.issue());
+        this.inputState = new SuggestionInputState(prefix -> registry.complete(prefix));
         if (sidecar != null) {
             sidecar.subscribeSSE("agent:state", data -> {
                 // Parse agent state SSE events and update status model
@@ -96,16 +97,33 @@ public final class ReplApp {
 
     private boolean handleKey(KeyEvent key, TuiRunner tui) {
         if (key.code() == KeyCode.ENTER) {
-            var input = inputState.text().strip();
-            if (!input.isEmpty()) {
-                processCommand(input);
-                inputState = new TextInputState("");
+            if (inputState.isDropdownVisible()) {
+                inputState.acceptSelected();
+            } else {
+                var input = inputState.submit();
+                if (!input.isEmpty()) {
+                    processCommand(input);
+                }
             }
             return true;
         }
         if (key.code() == KeyCode.ESCAPE) {
-            running = false;
+            if (inputState.isDropdownVisible()) {
+                inputState.dismissDropdown();
+            } else {
+                running = false;
+            }
             return true;
+        }
+        if (key.code() == KeyCode.TAB && inputState.isDropdownVisible()) {
+            inputState.acceptSelected();
+            return true;
+        }
+        if (inputState.isDropdownVisible()) {
+            switch (key.code()) {
+                case KeyCode.UP -> { inputState.selectPrevious(); return true; }
+                case KeyCode.DOWN -> { inputState.selectNext(); return true; }
+            }
         }
         routeKeyToInput(key);
         return true;
@@ -121,7 +139,7 @@ public final class ReplApp {
             case KeyCode.END -> inputState.moveCursorToEnd();
             default -> {
                 if (key.code() == KeyCode.CHAR) {
-                    inputState.insert(key.character());
+                    inputState.insertChar(key.character());
                 }
             }
         }
@@ -168,7 +186,8 @@ public final class ReplApp {
 
         renderStatusBar(frame, areas.get(0));
         renderOutput(frame, areas.get(1));
-        renderInput(frame, areas.get(2));
+        SuggestionInputRenderer.renderInput(frame, areas.get(2), inputState);
+        SuggestionInputRenderer.renderDropdown(frame, areas.get(1), inputState);
     }
 
     private void renderStatusBar(Frame frame, Rect area) {
@@ -196,18 +215,5 @@ public final class ReplApp {
         }
     }
 
-    private void renderInput(Frame frame, Rect area) {
-        var block = Block.builder()
-                .borders(Borders.ALL)
-                .title(" > ")
-                .build();
-        var inner = block.inner(area);
-        frame.renderWidget(block, area);
 
-        TextInput.builder()
-                .placeholder("type a command...")
-                .style(Style.EMPTY)
-                .build()
-                .renderWithCursor(inner, frame.buffer(), inputState, frame);
-    }
 }
