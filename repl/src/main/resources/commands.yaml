@@ -1,0 +1,107 @@
+commands:
+  work:
+    description: "Work lifecycle"
+    children:
+      start:
+        description: "Start work on an issue"
+        handler: "soredium:start"
+      continue:
+        description: "Resume work on current branch"
+        handler: "soredium:continue"
+      pause:
+        description: "Save state and switch away"
+        handler: "soredium:pause"
+      resume:
+        description: "Restore from pause stack"
+        handler: "soredium:resume"
+      next:
+        description: "Advance to next issue in queue"
+        handler: "soredium:next"
+      end:
+        description: "Mechanical close (merge, push)"
+        handler: "soredium:end"
+      status:
+        description: "Current branch, state, plan position"
+        handler: "soredium:status"
+      slot:
+        description: "Slot operations"
+        children:
+          create:
+            description: "Create a slot"
+            handler: "soredium:slot-create"
+
+  git:
+    description: "Git operations"
+    children:
+      status:
+        description: "Show working tree status"
+        handler: "shell:git status"
+      log:
+        description: "Show commit log"
+        handler: "shell:git log --oneline -20"
+      diff:
+        description: "Show working tree diff"
+        handler: "shell:git diff"
+      commit:
+        description: "Commit with issue linkage"
+        handler: "shell:git commit"
+      branch:
+        description: "List branches"
+        handler: "shell:git branch"
+      stash:
+        description: "Stash management"
+        handler: "shell:git stash"
+
+  project:
+    description: "Project operations"
+    children:
+      build:
+        description: "Compile the project"
+        handler: "shell:project-build"
+      test:
+        description: "Run tests"
+        handler: "shell:project-test"
+      run:
+        description: "Start dev mode"
+        handler: "shell:project-run"
+
+  llm:
+    description: "LLM dispatch"
+    children:
+      start:
+        description: "Spawn agent in paired terminal"
+        handler: "llm:start"
+      stop:
+        description: "Stop agent"
+        handler: "llm:stop"
+      sweep:
+        description: "Full sweep (forage, protocol, doc-sync, blog)"
+        handler: "llm:sweep"
+      squash:
+        description: "Dispatch git squash"
+        handler: "llm:squash"
+      review:
+        description: "Dispatch code review"
+        handler: "llm:review"
+      blog:
+        description: "Dispatch blog entry writing"
+        handler: "llm:blog"
+      end:
+        description: "Full LLM-assisted work-end"
+        handler: "llm:end"
+
+goals:
+  start-work:
+    description: "Start working on an issue"
+    steps:
+      - prompt: "Which issue?"
+        source: "github:open-issues"
+        type: select
+      - prompt: "ISX isolation?"
+        type: confirm
+        default: false
+      - type: summary
+      - type: confirm
+        prompt: "Proceed?"
+    execute:
+      - "soredium:start --issue {which_issue_}"
