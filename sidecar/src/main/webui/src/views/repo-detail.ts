@@ -237,7 +237,7 @@ export class TrellisRepoDetail extends LitElement {
                 .secondary=${this._toPairEntry(paired[1])}
               ></trellis-terminal-pair-view>
             </div>`
-          : this._snapshot}
+          : this._snapshot
           ? html`<div class="terminal-area" @click=${this._focusTerminal}>
               <pages-component-terminal
                 id="repo-terminal"
