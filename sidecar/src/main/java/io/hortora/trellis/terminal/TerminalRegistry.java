@@ -33,9 +33,9 @@ public class TerminalRegistry {
         bootstrap("trellis-");
     }
 
-    public void createSession(String name, String workingDir, String slot, String repo, String issue)
+    public void createSession(String name, String workingDir, String slot, String repo, String issue, String pairedTerminal)
             throws IOException, InterruptedException {
-        var placeholder = new TerminalInfo(name, workingDir, slot, repo, issue);
+        var placeholder = new TerminalInfo(name, workingDir, slot, repo, issue, pairedTerminal);
         if (sessions.putIfAbsent(name, placeholder) != null) {
             throw new IllegalStateException("Terminal already exists: " + name);
         }
@@ -44,6 +44,7 @@ public class TerminalRegistry {
             if (slot != null) {tmux.setOption(name, "@trellis_slot", slot);}
             if (repo != null) {tmux.setOption(name, "@trellis_repo", repo);}
             if (issue != null) {tmux.setOption(name, "@trellis_issue", issue);}
+            if (pairedTerminal != null) {tmux.setOption(name, "@trellis_paired", pairedTerminal);}
             generation.increment();
         } catch (IOException | InterruptedException e) {
             sessions.remove(name);
@@ -85,7 +86,8 @@ public class TerminalRegistry {
                 String slot = tmux.getOption(name, "@trellis_slot").orElse(null);
                 String repo = tmux.getOption(name, "@trellis_repo").orElse(null);
                 String issue = tmux.getOption(name, "@trellis_issue").orElse(null);
-                sessions.put(name, new TerminalInfo(name, null, slot, repo, issue));
+                String paired = tmux.getOption(name, "@trellis_paired").orElse(null);
+                sessions.put(name, new TerminalInfo(name, null, slot, repo, issue, paired));
                 LOG.infof("Bootstrapped session: %s (slot=%s, repo=%s, issue=%s)", name, slot, repo, issue);
             }
         } catch (IOException | InterruptedException e) {

@@ -96,4 +96,74 @@ class TerminalResourceTest {
     }
 
 
+    @Test
+    void createdTerminalWithPairedTerminalAppearsInResponse() {
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"pair-primary\",\"workingDir\":\"/tmp\",\"repo\":\"engine\"}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"pair-repl\",\"workingDir\":\"/tmp\",\"repo\":\"engine\",\"pairedTerminal\":\"pair-primary\"}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(201)
+                .body("terminal.pairedTerminal", equalTo("pair-primary"));
+    }
+
+    @Test
+    void createdTerminalWithCommandDoesNotStartAgent() {
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"cmd-test\",\"workingDir\":\"/tmp\",\"command\":\"echo hello\"}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(201)
+                .body("process", equalTo(null));
+    }
+
+    @Test
+    void commandAndAgentTogetherReturns400() {
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"conflict-test\",\"workingDir\":\"/tmp\",\"command\":\"echo hello\",\"agent\":{}}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("command and agent are mutually exclusive"));
+    }
+
+    @Test
+    void pairedTerminalAppearsInListResponse() {
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"list-pair-a\",\"workingDir\":\"/tmp\",\"repo\":\"engine\"}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(201);
+
+        given()
+                .contentType("application/json")
+                .body("{\"name\":\"list-pair-b\",\"workingDir\":\"/tmp\",\"repo\":\"engine\",\"pairedTerminal\":\"list-pair-a\"}")
+                .when()
+                .post("/api/terminals")
+                .then()
+                .statusCode(201);
+
+        given()
+                .when()
+                .get("/api/terminals")
+                .then()
+                .statusCode(200)
+                .body("find { it.terminalName == 'list-pair-b' }.terminal.pairedTerminal", equalTo("list-pair-a"));
+    }
+
 }

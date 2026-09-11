@@ -37,7 +37,7 @@ class AgentProcessManagerTest {
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
         when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
 
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         manager.pollTerminal(terminal);
 
         var snapshot = manager.getSnapshot("t1", terminal);
@@ -49,7 +49,7 @@ class AgentProcessManagerTest {
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
         when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
 
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         String fakePsOutput = """
               100     1  1024 /bin/zsh
               101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude
@@ -64,7 +64,7 @@ class AgentProcessManagerTest {
 
     @Test
     void pausedPreservedAcrossMonitorCycles() throws Exception {
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         manager.setPaused("t1", "claude");
 
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
@@ -81,7 +81,7 @@ class AgentProcessManagerTest {
     void bootstrapRestoresPausedState() throws Exception {
         when(tmux.getOption("t1", "@trellis_agent_state")).thenReturn(Optional.of("PAUSED"));
 
-        var terminals = List.of(new TerminalInfo("t1", "/tmp", null, null, null));
+        var terminals = List.of(new TerminalInfo("t1", "/tmp", null, null, null, null));
         manager.initializeFromBootstrap(terminals);
 
         var snapshot = manager.getSnapshot("t1", terminals.get(0));
@@ -91,7 +91,7 @@ class AgentProcessManagerTest {
 
     @Test
     void runningToIdleSetsLastError() throws Exception {
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         String runningPsOutput = """
               100     1  1024 /bin/zsh
               101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude
@@ -115,7 +115,7 @@ class AgentProcessManagerTest {
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
         when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
 
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         String fakePsOutput = """
               100     1  1024 /bin/zsh
               101   100 102400 /usr/local/bin/node /some/other/app.js
@@ -133,7 +133,7 @@ class AgentProcessManagerTest {
         manager.startAgent("t1", new StartAgentRequest(false, null));
 
         verify(tmux).sendKeys(eq("t1"), eq("claude\n"));
-        var snapshot = manager.getSnapshot("t1", new TerminalInfo("t1", "/tmp", null, null, null));
+        var snapshot = manager.getSnapshot("t1", new TerminalInfo("t1", "/tmp", null, null, null, null));
         assertEquals(AgentState.STARTING, snapshot.process().state());
     }
 
@@ -201,7 +201,7 @@ class AgentProcessManagerTest {
     void bootstrapRecoversPausedByCoordinatorState() throws Exception {
         when(tmux.getOption("t1", "@trellis_agent_state"))
                 .thenReturn(Optional.of("PAUSED_BY_COORDINATOR"));
-        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         manager.initializeFromBootstrap(List.of(terminal));
         var snapshot = manager.getSnapshot("t1", terminal);
         assertNotNull(snapshot.process());
@@ -210,7 +210,7 @@ class AgentProcessManagerTest {
 
     @Test
     void pausedByCoordinatorPreservedAcrossMonitorCycles() throws Exception {
-        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         agents().put("t1", AgentProcess.pausedByCoordinator("claude"));
 
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("zsh");
@@ -226,7 +226,7 @@ class AgentProcessManagerTest {
 
     @Test
     void gracefulShutdownSendsEscapeThenExit() throws Exception {
-        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         String psOutput = "  100     1  1024 /bin/zsh\n  101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude\n";
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
         when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
@@ -250,7 +250,7 @@ class AgentProcessManagerTest {
 
     @Test
     void gracefulShutdownSkipsExitIfShellAppearsAfterEscape() throws Exception {
-        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var    terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         String psOutput = "  100     1  1024 /bin/zsh\n  101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude\n";
         when(tmux.displayMessage("t1", "#{pane_current_command}")).thenReturn("node");
         when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
@@ -269,7 +269,7 @@ class AgentProcessManagerTest {
 
     @Test
     void gracefulShutdownIsNoOpForIdleAgent() throws Exception {
-        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         manager.gracefulShutdown("t1");
         assertNull(manager.getSnapshot("t1", terminal).process());
     }
@@ -277,7 +277,7 @@ class AgentProcessManagerTest {
     @Test
     void gracefulShutdownUsesTreeKillForStartingAgent() throws Exception {
         manager.setStarting("t1", "claude");
-        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         manager.gracefulShutdown("t1");
         verify(tmux, org.mockito.Mockito.never()).sendKeys(eq("t1"), eq("Escape"));
         verify(tmux, org.mockito.Mockito.never()).sendKeys(eq("t1"), eq("/exit\n"));
@@ -331,7 +331,7 @@ class AgentProcessManagerTest {
 
     @Test
     void pauseSetsPausedStateBeforeKillingProcess() throws Exception {
-        var terminal = new TerminalInfo("t1", "/tmp", null, null, null);
+        var terminal = new TerminalInfo("t1", "/tmp", null, null, null, null);
         String psOutput = """
                           100     1  1024 /bin/zsh
                           101   100 204800 /usr/local/bin/node /Users/user/.claude/local/claude

@@ -45,7 +45,7 @@ class TerminalRegistryTest {
 
     @Test
     void createSessionAddsToRegistry() throws IOException, InterruptedException {
-        registry.createSession(sessionName, "/tmp", null, null, null);
+        registry.createSession(sessionName, "/tmp", null, null, null, null);
 
         assertTrue(registry.get(sessionName).isPresent());
         assertTrue(tmux.hasSession(sessionName));
@@ -53,7 +53,7 @@ class TerminalRegistryTest {
 
     @Test
     void createSessionSetsMetadataOptions() throws IOException, InterruptedException {
-        registry.createSession(sessionName, "/tmp", "3", "engine", "42");
+        registry.createSession(sessionName, "/tmp", "3", "engine", "42", null);
 
         assertEquals("3", tmux.getOption(sessionName, "@trellis_slot").orElse(null));
         assertEquals("engine", tmux.getOption(sessionName, "@trellis_repo").orElse(null));
@@ -67,10 +67,10 @@ class TerminalRegistryTest {
 
     @Test
     void createSessionRejectsDuplicateNameAtomically() throws IOException, InterruptedException {
-        registry.createSession(sessionName, "/tmp", null, null, null);
+        registry.createSession(sessionName, "/tmp", null, null, null, null);
 
         assertThrows(IllegalStateException.class, () ->
-                                                          registry.createSession(sessionName, "/tmp", null, null, null));
+                                                          registry.createSession(sessionName, "/tmp", null, null, null, null));
 
         assertTrue(registry.get(sessionName).isPresent());
         assertTrue(tmux.hasSession(sessionName));
@@ -79,7 +79,7 @@ class TerminalRegistryTest {
 
     @Test
     void destroySessionRemovesFromRegistryAndTmux() throws IOException, InterruptedException {
-        registry.createSession(sessionName, "/tmp", null, null, null);
+        registry.createSession(sessionName, "/tmp", null, null, null, null);
         registry.destroySession(sessionName);
 
         assertTrue(registry.get(sessionName).isEmpty());
@@ -88,7 +88,7 @@ class TerminalRegistryTest {
 
     @Test
     void listReturnsAllRegisteredSessions() throws IOException, InterruptedException {
-        registry.createSession(sessionName, "/tmp", null, null, null);
+        registry.createSession(sessionName, "/tmp", null, null, null, null);
 
         var sessions = registry.list();
 

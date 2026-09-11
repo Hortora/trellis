@@ -5,5 +5,6 @@ public record TerminalInfo(
         String workingDir,
         String slot,
         String repo,
-        String issue
+        String issue,
+        String pairedTerminal
 ) {}

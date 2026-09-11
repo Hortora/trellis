@@ -62,11 +62,18 @@ public class TerminalResource {
                            .entity(Map.of("error", "name is required"))
                            .build();
         }
+        if (request.command() != null && request.agent() != null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                           .entity(Map.of("error", "command and agent are mutually exclusive"))
+                           .build();
+        }
         try {
             String workDir = request.workingDir() != null ? request.workingDir() : "/tmp";
-            registry.createSession(request.name(), workDir, request.slot(), request.repo(), request.issue());
+            registry.createSession(request.name(), workDir, request.slot(), request.repo(), request.issue(), request.pairedTerminal());
             if (request.agent() != null) {
                 processManager.startAgent(request.name(), request.agent());
+            } else if (request.command() != null) {
+                registry.sendKeys(request.name(), request.command() + "\n");
             }
             var terminal = registry.get(request.name()).orElseThrow();
             return Response.status(Response.Status.CREATED)
@@ -153,5 +160,6 @@ public class TerminalResource {
     }
 
     public record CreateTerminalRequest(String name, String workingDir, String slot,
-                                        String repo, String issue, StartAgentRequest agent) {}
+                                        String repo, String issue, StartAgentRequest agent,
+                                        String command, String pairedTerminal) {}
 }

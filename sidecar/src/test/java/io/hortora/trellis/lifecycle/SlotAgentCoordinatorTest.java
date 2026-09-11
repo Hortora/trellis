@@ -49,9 +49,9 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void coordinatedPauseShutsDownAgentsBeforeGitOps() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null);
-        var t3 = new TerminalInfo("t3", "/tmp", "slot-2", null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
+        var t3 = new TerminalInfo("t3", "/tmp", "slot-2", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2, t3));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));
@@ -72,8 +72,8 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void coordinatedResumeRestartsOnlyCoordinatorPausedAgents() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, AgentProcess.pausedByCoordinator("claude"), null));
@@ -121,8 +121,8 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void coordinatedEndStopsAllAgentsIncludingPaused() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));
@@ -140,7 +140,7 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void agentShutdownFailureDoesNotBlockPause() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));

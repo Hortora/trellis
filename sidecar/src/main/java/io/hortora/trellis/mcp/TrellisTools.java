@@ -160,7 +160,8 @@ public class TrellisTools {
                     var slot = (String) p.get("slot");
                     var repo = (String) p.get("repo");
                     var issue = (String) p.get("issue");
-                    registry.createSession(name, workingDir, slot, repo, issue);
+                    var paired = (String) p.get("pairedTerminal");
+                    registry.createSession(name, workingDir, slot, repo, issue, paired);
                     yield ToolResponse.success("created: " + name);
                 }
                 case "destroy" -> {

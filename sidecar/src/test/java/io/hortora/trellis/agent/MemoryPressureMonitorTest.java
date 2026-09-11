@@ -90,6 +90,6 @@ class MemoryPressureMonitorTest {
     }
 
     private static TerminalInfo terminal(String name) {
-        return new TerminalInfo(name, "/tmp", "slot-1", null, null);
+        return new TerminalInfo(name, "/tmp", "slot-1", null, null, null);
     }
 }
