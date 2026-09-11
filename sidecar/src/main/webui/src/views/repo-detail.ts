@@ -406,6 +406,7 @@ export class TrellisRepoDetail extends LitElement {
       this._error = `${action} failed: ${e}`;
     } finally {
       this._actionInProgress = null;
+      setTimeout(() => this._focusTerminal(), 200);
     }
   }
 
