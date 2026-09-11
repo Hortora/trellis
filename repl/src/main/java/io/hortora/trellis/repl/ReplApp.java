@@ -24,6 +24,7 @@ import io.hortora.trellis.repl.command.CommandNode;
 import io.hortora.trellis.repl.command.CommandRegistry;
 import io.hortora.trellis.repl.command.CommandResult;
 import io.hortora.trellis.repl.command.HandlerDispatcher;
+import io.hortora.trellis.repl.input.CommandHistory;
 import io.hortora.trellis.repl.input.SuggestionInputRenderer;
 import io.hortora.trellis.repl.input.SuggestionInputState;
 import io.hortora.trellis.repl.sidecar.SidecarClient;
@@ -40,6 +41,7 @@ public final class ReplApp {
     private final HandlerDispatcher dispatcher;
     private final StatusModel statusModel;
     private final SuggestionInputState inputState;
+    private final CommandHistory history = new CommandHistory();
     private final List<String> outputLines = new ArrayList<>();
     private boolean running = true;
 
@@ -124,6 +126,19 @@ public final class ReplApp {
                 case KeyCode.UP -> { inputState.selectPrevious(); return true; }
                 case KeyCode.DOWN -> { inputState.selectNext(); return true; }
             }
+        } else {
+            switch (key.code()) {
+                case KeyCode.UP -> {
+                    history.previous().ifPresent(cmd -> inputState.setText(cmd));
+                    return true;
+                }
+                case KeyCode.DOWN -> {
+                    var next = history.next();
+                    inputState.setText(next.orElse(""));
+                    return true;
+                }
+                default -> {}
+            }
         }
         routeKeyToInput(key);
         return true;
@@ -150,6 +165,7 @@ public final class ReplApp {
             running = false;
             return;
         }
+        history.add(input);
         outputLines.add("> " + input);
 
         var node = registry.resolve(input);

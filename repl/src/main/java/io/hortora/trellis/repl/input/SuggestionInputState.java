@@ -78,6 +78,15 @@ public final class SuggestionInputState {
         textState.moveCursorToEnd();
     }
 
+    public void setText(String text) {
+        textState = new TextInputState(text);
+        textState.moveCursorToEnd();
+        dropdownVisible = false;
+        suggestions     = List.of();
+        selectedIndex   = 0;
+    }
+
+
     public void selectNext() {
         if (suggestions.isEmpty()) return;
         selectedIndex = (selectedIndex + 1) % suggestions.size();
