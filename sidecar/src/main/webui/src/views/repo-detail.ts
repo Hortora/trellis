@@ -159,10 +159,10 @@ export class TrellisRepoDetail extends LitElement {
     }
     if (changed.has('_snapshot') && this._snapshot &&
         this._snapshot.terminalName !== this._lastTerminalName) {
-      this._lastTerminalName = this._snapshot.terminalName;
       this.updateComplete.then(() => {
         const el = this.renderRoot.querySelector('#repo-terminal') as any;
         if (el) {
+          this._lastTerminalName = this._snapshot!.terminalName;
           const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
           el.configure({
             wsUrl: `${proto}//${location.host}/ws/terminal/${this._snapshot!.terminalName}/{cols}/{rows}`,
