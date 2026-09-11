@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/terminal-tab-group';
+import { PairEntry } from '../components/terminal-pair-view';
 import '../components/agent-status-badge';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 
@@ -59,6 +60,7 @@ interface AgentSnapshot {
     slot: string | null;
     repo: string | null;
     issue: string | null;
+    pairedTerminal: string | null;
   };
   process: AgentProcess | null;
   lastError: string | null;
@@ -106,7 +108,9 @@ export class TrellisSlotDetail extends LitElement {
     .action-btn.primary { border-color: #1d4ed8; color: #93c5fd; }
     .action-btn.primary:hover { background: #1e3a5f; }
 
-    .terminal-area { flex: 1; min-height: 0; }
+    .terminal-area { flex: 1; min-height: 0; display: flex; }
+    .terminal-area trellis-terminal-pair-view { flex: 1; overflow: hidden; }
+    .terminal-area trellis-terminal-tab-group { flex: 1; overflow: hidden; }
 
     .sidebar {
       width: 280px; background: #1e1e1e; border-left: 1px solid #333;
@@ -215,15 +219,15 @@ export class TrellisSlotDetail extends LitElement {
     if (this._error) return html`<div class="error">${this._error}</div>`;
     if (!this._slot) return html`<div class="loading">Loading slot ${this.slotNumber}...</div>`;
 
-    const tabs = this._snapshots
-        .filter(s => s.terminal.slot === String(this.slotNumber))
-        .map(s => ({
+    const slotSnapshots = this._snapshots.filter(s => s.terminal.slot === String(this.slotNumber));
+    const tabs = slotSnapshots.map(s => ({
           name: s.terminal.repo ?? s.terminalName,
           sessionName: s.terminalName,
           agentState: s.process?.state ?? 'IDLE',
           memoryMb: s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0,
           lastError: s.lastError,
         }));
+    const paired = this._findPair(slotSnapshots);
 
     return html`
       <div class="main">
@@ -234,7 +238,12 @@ export class TrellisSlotDetail extends LitElement {
           </div>
         ` : nothing}
         <div class="terminal-area">
-          ${tabs.length > 0
+          ${paired
+            ? html`<trellis-terminal-pair-view
+                .primary=${this._toPairEntry(paired[0])}
+                .secondary=${this._toPairEntry(paired[1])}
+              ></trellis-terminal-pair-view>`
+            : tabs.length > 0
             ? html`<trellis-terminal-tab-group .tabs=${tabs}></trellis-terminal-tab-group>`
             : html`
               <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1.5rem;color:#666">
@@ -402,6 +411,26 @@ export class TrellisSlotDetail extends LitElement {
 
   private _hasActiveItem(items: PlanItem[]): boolean {
     return items.some(i => i.active || (i.children && this._hasActiveItem(i.children)));
+  }
+
+  private _toPairEntry(s: AgentSnapshot): PairEntry {
+    return {
+      name: s.terminal.repo ?? s.terminalName,
+      sessionName: s.terminalName,
+      agentState: s.process?.state,
+      memoryMb: s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0,
+      lastError: s.lastError,
+    };
+  }
+
+  private _findPair(snapshots: AgentSnapshot[]): [AgentSnapshot, AgentSnapshot] | null {
+    for (const s of snapshots) {
+      if (s.terminal.pairedTerminal) {
+        const partner = snapshots.find(o => o.terminalName === s.terminal.pairedTerminal);
+        if (partner) return [s, partner];
+      }
+    }
+    return null;
   }
 
   private async _loadSlot() {

@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/agent-status-badge';
+import { PairEntry } from '../components/terminal-pair-view';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 
 interface RepoData {
@@ -26,6 +27,7 @@ interface AgentSnapshot {
     slot: string | null;
     repo: string | null;
     issue: string | null;
+    pairedTerminal: string | null;
   };
   process: AgentProcess | null;
   lastError: string | null;
@@ -40,6 +42,7 @@ export class TrellisRepoDetail extends LitElement {
 
   @state() private _repo: RepoData | null = null;
   @state() private _snapshot: AgentSnapshot | null = null;
+  @state() private _snapshots: AgentSnapshot[] = [];
   @state() private _error: string | null = null;
   @state() private _loading = false;
   @state() private _actionInProgress: string | null = null;
@@ -76,6 +79,7 @@ export class TrellisRepoDetail extends LitElement {
 
     .terminal-area { flex: 1; min-height: 0; overflow: hidden; display: flex; }
     .terminal-area pages-component-terminal { flex: 1; overflow: hidden; }
+    .terminal-area trellis-terminal-pair-view { flex: 1; overflow: hidden; }
     pages-component-terminal .xterm { height: 100%; }
     pages-component-terminal .xterm-viewport { overflow: hidden !important; }
 
@@ -221,10 +225,19 @@ export class TrellisRepoDetail extends LitElement {
     if (this._error) return html`<div class="error">${this._error}</div>`;
     if (!this._repo) return nothing;
 
+    const paired = this._pairedSnapshots();
+
     return html`
       <div class="main">
         ${this._renderToolbar()}
-        ${this._snapshot
+        ${paired
+          ? html`<div class="terminal-area">
+              <trellis-terminal-pair-view
+                .primary=${this._toPairEntry(paired[0])}
+                .secondary=${this._toPairEntry(paired[1])}
+              ></trellis-terminal-pair-view>
+            </div>`
+          : this._snapshot}
           ? html`<div class="terminal-area" @click=${this._focusTerminal}>
               <pages-component-terminal
                 id="repo-terminal"
@@ -396,6 +409,26 @@ export class TrellisRepoDetail extends LitElement {
     }
   }
 
+  private _pairedSnapshots(): [AgentSnapshot, AgentSnapshot] | null {
+    for (const s of this._snapshots) {
+      if (s.terminal.pairedTerminal) {
+        const partner = this._snapshots.find(o => o.terminalName === s.terminal.pairedTerminal);
+        if (partner) return [s, partner];
+      }
+    }
+    return null;
+  }
+
+  private _toPairEntry(s: AgentSnapshot): PairEntry {
+    return {
+      name: s.terminal.repo ?? s.terminalName,
+      sessionName: s.terminalName,
+      agentState: s.process?.state,
+      memoryMb: s.process ? Math.round(s.process.memoryBytes / (1024 * 1024)) : 0,
+      lastError: s.lastError,
+    };
+  }
+
   private async _loadRepo() {
     this._loading = true;
     this._error = null;
@@ -424,7 +457,8 @@ export class TrellisRepoDetail extends LitElement {
       const res = await fetch(`/api/terminals?${params}`);
       if (!res.ok) return;
       const all: AgentSnapshot[] = await res.json();
-      this._snapshot = all.find(s => !s.terminal.slot) ?? null;
+      this._snapshots = all.filter(s => !s.terminal.slot);
+      this._snapshot = this._snapshots[0] ?? null;
     } catch { /* ignore */ }
   }
 }
