@@ -83,6 +83,15 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@casehubio/pages-property-palette@portal:./.casehub-packages/packages/pages-property-palette::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/pages-property-palette@portal:./.casehub-packages/packages/pages-property-palette::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/pages-ui-components": "npm:0.2.3"
+    lit: "npm:^3.3.3"
+  languageName: node
+  linkType: soft
+
 "@casehubio/pages-runtime@portal:./.casehub-packages/packages/pages-runtime::locator=trellis-webui%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@casehubio/pages-runtime@portal:./.casehub-packages/packages/pages-runtime::locator=trellis-webui%40workspace%3A."
@@ -96,6 +105,15 @@ __metadata:
     "@casehubio/pages-viz": "npm:0.2.3"
     js-yaml: "npm:^4.1.0"
     marked: "npm:^15.0.0"
+  languageName: node
+  linkType: soft
+
+"@casehubio/pages-schema@portal:./.casehub-packages/packages/pages-schema::locator=trellis-webui%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@casehubio/pages-schema@portal:./.casehub-packages/packages/pages-schema::locator=trellis-webui%40workspace%3A."
+  dependencies:
+    "@casehubio/pages-data": "npm:0.2.3"
+    zod: "npm:^3.23.0"
   languageName: node
   linkType: soft
 
@@ -139,6 +157,7 @@ __metadata:
   dependencies:
     "@casehubio/pages-component": "npm:0.2.3"
     "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-schema": "npm:0.1.0"
     zod: "npm:^3.23.0"
   languageName: node
   linkType: soft
@@ -149,6 +168,7 @@ __metadata:
   dependencies:
     "@casehubio/pages-component": "npm:0.2.3"
     "@casehubio/pages-data": "npm:0.2.3"
+    "@casehubio/pages-property-palette": "npm:0.1.0"
     "@casehubio/pages-ui-components": "npm:0.2.3"
     "@drdreo/heatmap": "npm:^1.4.1"
     echarts: "npm:^5.6.0"
