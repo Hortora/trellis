@@ -539,7 +539,14 @@ export class TrellisSlotDetail extends LitElement {
       const params = new URLSearchParams();
       params.set('slot', String(this.slotNumber));
       const res = await fetch(`/api/terminals?${params}`);
-      if (res.ok) this._snapshots = await res.json();
+      if (res.ok) {
+        const next: AgentSnapshot[] = await res.json();
+        const prevNames = this._snapshots.map(s => s.terminalName).join(',');
+        const nextNames = next.map(s => s.terminalName).join(',');
+        if (prevNames !== nextNames) {
+          this._snapshots = next;
+        }
+      }
     } catch { /* ignore */ }
   }
 

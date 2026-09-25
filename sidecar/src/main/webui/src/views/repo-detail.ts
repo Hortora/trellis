@@ -41,7 +41,8 @@ export class TrellisRepoDetail extends LitElement {
   @property({ type: Boolean }) modal = false;
 
   @state() private _repo: RepoData | null = null;
-  @state() private _snapshot: AgentSnapshot | null = null;
+  @state() private _terminalName = '';
+  @state() private _agentState: { state: string; memoryMb: number; lastError: string | null } | null = null;
   @state() private _snapshots: AgentSnapshot[] = [];
   @state() private _error: string | null = null;
   @state() private _loading = false;
@@ -51,7 +52,7 @@ export class TrellisRepoDetail extends LitElement {
   private _lastTerminalName = '';
   private _eventSource: EventSource | null = null;
   private _unsubWorkspace: (() => void) | null = null;
-  private _mousedownHandler: ((e: Event) => void) | null = null;
+
 
   static override styles = css`
     :host { display: flex; height: 100%; font-family: system-ui, -apple-system, sans-serif; }
@@ -142,10 +143,6 @@ export class TrellisRepoDetail extends LitElement {
     super.disconnectedCallback();
     this._eventSource?.close();
     this._unsubWorkspace?.();
-    if (this._mousedownHandler) {
-      document.removeEventListener('mousedown', this._mousedownHandler);
-      this._mousedownHandler = null;
-    }
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
@@ -157,34 +154,20 @@ export class TrellisRepoDetail extends LitElement {
         this._loadTerminal();
       }
     }
-    if (changed.has('_snapshot') && this._snapshot &&
-        this._snapshot.terminalName !== this._lastTerminalName) {
+    if (changed.has('_terminalName') && this._terminalName &&
+        this._terminalName !== this._lastTerminalName) {
       this.updateComplete.then(() => {
         const el = this.renderRoot.querySelector('#repo-terminal') as any;
         if (el) {
-          this._lastTerminalName = this._snapshot!.terminalName;
+          this._lastTerminalName = this._terminalName;
           const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
           el.configure({
-            wsUrl: `${proto}//${location.host}/ws/terminal/${this._snapshot!.terminalName}/{cols}/{rows}`,
+            wsUrl: `${proto}//${location.host}/ws/terminal/${this._terminalName}/{cols}/{rows}`,
             theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad' },
             fontSize: 13,
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
           });
           setTimeout(() => this._focusTerminal(), 500);
-          if (this._mousedownHandler) {
-            document.removeEventListener('mousedown', this._mousedownHandler);
-          }
-          this._mousedownHandler = (e: Event) => {
-            const termArea = this.renderRoot.querySelector('.terminal-area');
-            if (!termArea) return;
-            const rect = termArea.getBoundingClientRect();
-            const me = e as MouseEvent;
-            if (me.clientX >= rect.left && me.clientX <= rect.right &&
-                me.clientY >= rect.top && me.clientY <= rect.bottom) {
-              setTimeout(() => { if (el._terminal) el._terminal.focus(); }, 0);
-            }
-          };
-          document.addEventListener('mousedown', this._mousedownHandler);
         }
       });
     }
@@ -206,8 +189,8 @@ export class TrellisRepoDetail extends LitElement {
     if (topic === 'terminal-connected') {
       this._focusTerminal();
     }
-    if (topic === 'terminal-resize' && this._snapshot) {
-      fetch(`/api/terminals/${this._snapshot.terminalName}/resize`, {
+    if (topic === 'terminal-resize' && this._terminalName) {
+      fetch(`/api/terminals/${this._terminalName}/resize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cols: payload.cols, rows: payload.rows }),
@@ -237,8 +220,8 @@ export class TrellisRepoDetail extends LitElement {
                 .secondary=${this._toPairEntry(paired[1])}
               ></trellis-terminal-pair-view>
             </div>`
-          : this._snapshot
-          ? html`<div class="terminal-area" @click=${this._focusTerminal}>
+          : this._terminalName
+          ? html`<div class="terminal-area" @click=${() => this._focusTerminal()}>
               <pages-component-terminal
                 id="repo-terminal"
                 @pages-event=${this._handleTerminalEvent}
@@ -307,14 +290,14 @@ export class TrellisRepoDetail extends LitElement {
           </div>
         ` : nothing}
 
-        ${this._snapshot ? html`
+        ${this._terminalName ? html`
           <div class="sidebar-section">
             <h3>Agent</h3>
             <div class="meta-item" style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.5rem">
               <agent-status-badge
-                .state=${this._snapshot.process?.state ?? 'IDLE'}
-                .memoryMb=${this._snapshot.process ? Math.round(this._snapshot.process.memoryBytes / (1024 * 1024)) : 0}
-                .lastError=${this._snapshot.lastError}
+                .state=${this._agentState?.state ?? 'IDLE'}
+                .memoryMb=${this._agentState?.memoryMb ?? 0}
+                .lastError=${this._agentState?.lastError ?? null}
               ></agent-status-badge>
             </div>
             <div style="display:flex;gap:0.3rem">
@@ -327,8 +310,8 @@ export class TrellisRepoDetail extends LitElement {
   }
 
   private _renderAgentButtons() {
-    if (!this._snapshot) return nothing;
-    const state = this._snapshot.process?.state ?? 'IDLE';
+    if (!this._terminalName) return nothing;
+    const state = this._agentState?.state ?? 'IDLE';
     const disabled = !!this._actionInProgress;
     switch (state) {
       case 'RUNNING':
@@ -389,10 +372,10 @@ export class TrellisRepoDetail extends LitElement {
   }
 
   private async _agentAction(action: string) {
-    if (!this._snapshot) return;
+    if (!this._terminalName) return;
     this._actionInProgress = action;
     try {
-      const res = await fetch(`/api/terminals/${this._snapshot.terminalName}/agent/${action}`, {
+      const res = await fetch(`/api/terminals/${this._terminalName}/agent/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: action === 'start' ? '{}' : undefined,
@@ -459,10 +442,22 @@ export class TrellisRepoDetail extends LitElement {
       if (!res.ok) return;
       const all: AgentSnapshot[] = await res.json();
       const filtered = all.filter(s => !s.terminal.slot);
-      const next = filtered[0] ?? null;
-      if (next?.terminalName !== this._snapshot?.terminalName) {
+      const prevNames = this._snapshots.map(s => s.terminalName).join(',');
+      const nextNames = filtered.map(s => s.terminalName).join(',');
+      if (prevNames !== nextNames) {
         this._snapshots = filtered;
-        this._snapshot = next;
+      }
+      const next = filtered[0] ?? null;
+      const name = next?.terminalName ?? '';
+      if (name !== this._terminalName) {
+        this._terminalName = name;
+      }
+      const agentState = next?.process
+        ? { state: next.process.state, memoryMb: Math.round(next.process.memoryBytes / (1024 * 1024)), lastError: next.lastError }
+        : null;
+      const prev = this._agentState;
+      if (agentState?.state !== prev?.state || agentState?.memoryMb !== prev?.memoryMb || agentState?.lastError !== prev?.lastError) {
+        this._agentState = agentState;
       }
     } catch { /* ignore */ }
   }
