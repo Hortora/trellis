@@ -192,17 +192,23 @@ public class AgentProcessManager {
     }
 
     public void refreshAgent(String terminalName) throws IOException, InterruptedException {
-        var existing = agents.get(terminalName);
-        if (existing == null || existing.state() != AgentState.RUNNING) {
-            throw new IllegalStateException("Cannot refresh agent in state: " +
-                                            (existing != null ? existing.state() : "IDLE"));
+        var lock = lockFor(terminalName);
+        lock.lock();
+        try {
+            var existing = agents.get(terminalName);
+            if (existing == null || existing.state() != AgentState.RUNNING) {
+                throw new IllegalStateException("Cannot refresh agent in state: " +
+                                                (existing != null ? existing.state() : "IDLE"));
+            }
+            setStarting(terminalName, "claude -c");
+            if (existing.pid() > 0) {
+                treeKill(terminalName, existing.pid());
+            }
+            verifyShellForeground(terminalName);
+            tmux.sendKeys(terminalName, "claude -c\n");
+        } finally {
+            lock.unlock();
         }
-        setStarting(terminalName, "claude -c");
-        if (existing.pid() > 0) {
-            treeKill(terminalName, existing.pid());
-        }
-        try {Thread.sleep(500);} catch (InterruptedException ignored) {}
-        tmux.sendKeys(terminalName, "claude -c\n");
     }
 
     public void gracefulShutdown(String terminalName) throws IOException, InterruptedException {

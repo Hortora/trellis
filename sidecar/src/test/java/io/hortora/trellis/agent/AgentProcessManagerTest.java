@@ -363,4 +363,28 @@ class AgentProcessManagerTest {
             return (java.util.concurrent.ConcurrentHashMap<String, AgentProcess>) field.get(manager);
         } catch (Exception e) {throw new RuntimeException(e);}
     }
+
+
+    @Test
+    void refreshAgentAcquiresLockAndVerifiesShell() throws Exception {
+        when(tmux.displayMessage("t1", "#{pane_current_command}"))
+            .thenReturn("claude")
+            .thenReturn("zsh");
+        when(tmux.displayMessage("t1", "#{pane_pid}")).thenReturn("100");
+
+        var terminal = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
+        manager.setStarting("t1", "claude");
+        manager.pollTerminalWithPsOutput(terminal, "12345 100 200000 claude");
+
+        var snapshot = manager.getSnapshot("t1", terminal);
+        assertEquals("RUNNING", snapshot.process().state().name());
+
+        org.mockito.Mockito.clearInvocations(tmux);
+        manager.refreshAgent("t1");
+
+        verify(tmux).sendKeys(eq("t1"), eq("claude -c\n"));
+        // verifyShellForeground must be called — not Thread.sleep
+        verify(tmux, org.mockito.Mockito.atLeastOnce()).displayMessage(eq("t1"), eq("#{pane_current_command}"));
+    }
+
 }
