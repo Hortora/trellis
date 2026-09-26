@@ -97,6 +97,10 @@ npm start                                                  # launch app (require
 - `SessionLogger` appends terminal output to `{data-dir}/sessions/{name}.log` — append-only, tail-read via RandomAccessFile
 - `POST /api/model/ui-state` — frontend pushes UI state (64KB limit), sidecar serves as opaque JSON with staleness detection via `lastPushed` timestamp
 - `control:navigate` SSE topic — command convention for agent-driven UI navigation with correlation-based acknowledgment
+- `LifecycleOperationTracker` — tracks async lifecycle operation progress (end/pause/resume) with file-backed durability (`.trellis/operations/{id}.json`). Copy-on-write `OperationProgress` records, SSE broadcasting via `lifecycle:progress` topic, `@Scheduled` eviction (5min completed, 1hr failed), startup recovery via `@Observes StartupEvent`
+- `POST /api/lifecycle/{end|pause|resume}/{slotId}` — async lifecycle operations return HTTP 202 with `OperationProgress`; `GET /api/lifecycle/operations/{id}` and `GET /api/lifecycle/operations?slot={slotId}` — query current operation state. `start` remains synchronous (HTTP 200)
+- `SlotAgentCoordinator` async orchestrators — `coordinatedEndAsync/PauseAsync/ResumeAsync` use `Semaphore(1)` (not ReentrantLock) for cross-thread acquire/release, `ManagedExecutor` for background execution, `StepFailedException` control flow for step-level failures
+- `lifecycle:progress` SSE topic — step-level events (step name + state + stdout/stderr) and operation-level events (step=null for operation failures). Slot-detail component subscribes directly (not via workspace-sse.ts global topics)
 
 ## Project Artifacts
 
