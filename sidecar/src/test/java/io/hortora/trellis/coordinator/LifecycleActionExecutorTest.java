@@ -40,7 +40,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void executesEpicNextSuccessfully() {
-        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of("status", "advanced"), ""));
+        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of("status", "advanced"), "", ""));
         var executor = new LifecycleActionExecutor(manager, null);
         var action   = action("epic.next", Map.of("epicPath", "/path/.epic"));
         var result   = executor.execute(action);
@@ -50,7 +50,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void executesSlotMerge() {
-        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of(), ""));
+        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(manager, null);
         var action   = action("slot.merge", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
@@ -59,7 +59,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void listParamsReconstructed() {
-        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of(), ""));
+        var manager  = new StubLifecycleManager(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(manager, null);
         var action = action("slot.create",
                             Map.of("workspaceRoot", "/ws", "args.0", "issue-5", "args.1", "my-branch"));
@@ -92,7 +92,7 @@ class LifecycleActionExecutorTest {
     void pauseRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(SlotAgentCoordinator.class);
         when(coordinator.coordinatedPause(eq("s1"), any()))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.pause", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
@@ -104,7 +104,7 @@ class LifecycleActionExecutorTest {
     void resumeRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(SlotAgentCoordinator.class);
         when(coordinator.coordinatedResume(eq("s1"), any()))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.resume", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
@@ -116,7 +116,7 @@ class LifecycleActionExecutorTest {
     void endRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(SlotAgentCoordinator.class);
         when(coordinator.coordinatedEnd(eq("s1"), any()))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.end", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);

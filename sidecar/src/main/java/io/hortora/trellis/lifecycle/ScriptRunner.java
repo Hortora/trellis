@@ -70,7 +70,7 @@ public class ScriptRunner {
             LOG.warnf("Script %s/%s exited with code %d: %s", skillDir, scriptName, exitCode, stderr);
         }
 
-        return new OperationResult(exitCode == 0, exitCode, output, stderr);
+        return new OperationResult(exitCode == 0, exitCode, output, stderr, stdout);
     }
 
     private Map<String, String> parseKeyValues(String stdout) {

@@ -119,7 +119,7 @@ class ActionServiceAutonomyTest {
         // autoExecute should skip the risk gate and go straight to APPROVED→EXECUTING→COMPLETED/FAILED
         autonomyResolver.setSessionOverride(AutonomyLevel.MANUAL);
         var lifecycleExecutor = new LifecycleActionExecutorTest.StubLifecycleManager(
-                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), "done"));
+                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), "done", ""));
         var svc = ActionService.forTest(dataSource,
                 List.of(new LifecycleActionExecutor(lifecycleExecutor, stubCoordinator(lifecycleExecutor))),
                 autonomyResolver, countdownScheduler, preferences);

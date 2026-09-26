@@ -6,5 +6,6 @@ public record OperationResult(
         boolean success,
         int exitCode,
         Map<String, String> output,
-        String stderr
+        String stderr,
+        String rawStdout
 ) {}

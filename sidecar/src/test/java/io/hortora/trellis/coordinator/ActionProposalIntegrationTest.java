@@ -71,7 +71,7 @@ class ActionProposalIntegrationTest {
         new CoordinatorSchemaManager().initialize(sds);
 
         var lifecycleMgr = new LifecycleActionExecutorTest.StubLifecycleManager(
-                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), ""));
+                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), "", ""));
         var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr, null);
         var service = ActionService.forTest(sds, List.of(lifecycleExec));
 
@@ -94,7 +94,7 @@ class ActionProposalIntegrationTest {
         new CoordinatorSchemaManager().initialize(sds);
 
         var lifecycleMgr = new LifecycleActionExecutorTest.StubLifecycleManager(
-                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), ""));
+                new io.hortora.trellis.lifecycle.OperationResult(true, 0, Map.of(), "", ""));
         var lifecycleExec = new LifecycleActionExecutor(lifecycleMgr, null);
         var service = ActionService.forTest(sds, List.of(lifecycleExec));
 

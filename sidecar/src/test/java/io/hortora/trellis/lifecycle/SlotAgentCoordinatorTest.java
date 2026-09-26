@@ -60,7 +60,7 @@ class SlotAgentCoordinatorTest {
         when(agentManager.getSnapshot("t3", t3)).thenReturn(
                 new AgentSnapshot("t3", t3, runningAgent(), null));
         when(lifecycleManager.pause("slot-1", WORKSPACE))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
         coordinator.coordinatedPause("slot-1", WORKSPACE);
 
@@ -80,7 +80,7 @@ class SlotAgentCoordinatorTest {
         when(agentManager.getSnapshot("t2", t2)).thenReturn(
                 new AgentSnapshot("t2", t2, AgentProcess.paused("claude"), null));
         when(lifecycleManager.resume("slot-1", WORKSPACE))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
         coordinator.coordinatedResume("slot-1", WORKSPACE);
 
@@ -91,7 +91,7 @@ class SlotAgentCoordinatorTest {
     @Test
     void coordinatedResumeSkipsAgentsOnGitFailure() throws Exception {
         when(lifecycleManager.resume("slot-1", WORKSPACE))
-                .thenReturn(new OperationResult(false, 1, Map.of(), "rebase failed"));
+                .thenReturn(new OperationResult(false, 1, Map.of(), "rebase failed", ""));
 
         var result = coordinator.coordinatedResume("slot-1", WORKSPACE);
 
@@ -105,7 +105,7 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.pause(eq("slot-1"), any()))
                 .thenAnswer(inv -> {
                     Thread.sleep(200);
-                    return new OperationResult(true, 0, Map.of(), "");
+                    return new OperationResult(true, 0, Map.of(), "", "");
                 });
 
         var future = Executors.newSingleThreadExecutor().submit(() -> {
@@ -129,7 +129,7 @@ class SlotAgentCoordinatorTest {
         when(agentManager.getSnapshot("t2", t2)).thenReturn(
                 new AgentSnapshot("t2", t2, AgentProcess.paused("claude"), null));
         when(lifecycleManager.end("slot-1", WORKSPACE))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
         coordinator.coordinatedEnd("slot-1", WORKSPACE);
 
@@ -146,7 +146,7 @@ class SlotAgentCoordinatorTest {
                 new AgentSnapshot("t1", t1, runningAgent(), null));
         doThrow(new RuntimeException("agent stuck")).when(agentManager).gracefulShutdown("t1");
         when(lifecycleManager.pause("slot-1", WORKSPACE))
-                .thenReturn(new OperationResult(true, 0, Map.of(), ""));
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
         var result = coordinator.coordinatedPause("slot-1", WORKSPACE);
 
