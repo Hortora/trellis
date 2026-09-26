@@ -13,9 +13,6 @@ export class PagesTerminal extends HTMLElement {
     _onResizeDisposable;
     _connected = false;
     configure(props) {
-        if (this._props?.wsUrl === props.wsUrl && this._terminal) {
-            return;
-        }
         this._props = props;
         if (this._connected) {
             this._teardown();
@@ -128,10 +125,6 @@ export class PagesTerminal extends HTMLElement {
         };
     }
     _scheduleReconnect() {
-        if (this._retries >= 3) {
-            this._dispatchEvent("terminal-disconnected", { reason: "max-retries" });
-            return;
-        }
         const delay = Math.min(1000 * Math.pow(2, this._retries), 30000);
         this._retries++;
         this._reconnectTimer = setTimeout(() => {

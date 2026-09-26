@@ -66,6 +66,23 @@ interface AgentSnapshot {
   lastError: string | null;
 }
 
+interface StepProgress {
+  name: string;
+  state: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+  summary: string;
+  stdout: string | null;
+  stderr: string | null;
+}
+
+interface OperationProgress {
+  operationId: string;
+  operationType: string;
+  slotId: string;
+  state: 'RUNNING' | 'COMPLETED' | 'FAILED';
+  steps: StepProgress[];
+  errorMessage?: string;
+}
+
 @customElement('trellis-slot-detail')
 export class TrellisSlotDetail extends LitElement {
 
@@ -80,6 +97,8 @@ export class TrellisSlotDetail extends LitElement {
   @state() private _actionInProgress: string | null = null;
   @state() private _evictionCandidates: Set<string> = new Set();
   @state() private _totalAgentMemoryMb = 0;
+  @state() private _operation: OperationProgress | null = null;
+  @state() private _expandedStep: string | null = null;
   private _eventSource: EventSource | null = null;
   private _unsubWorkspace: (() => void) | null = null;
 
@@ -155,6 +174,45 @@ export class TrellisSlotDetail extends LitElement {
       margin-top: 0.5rem; border-top: 1px solid #333;
     }
 
+    .lifecycle-step {
+      display: flex; align-items: baseline; gap: 0.4rem;
+      font-size: 0.8rem; padding: 0.15rem 0;
+    }
+    .lifecycle-step-done { color: #666; }
+    .lifecycle-step-active { color: #e5e5e5; }
+    .lifecycle-step-pending { color: #555; }
+    .lifecycle-step-failed { color: #fca5a5; }
+    .lifecycle-icon-done { color: #86efac; }
+    .lifecycle-icon-active { color: #93c5fd; }
+    .lifecycle-icon-pending { color: #555; }
+    .lifecycle-icon-failed { color: #f87171; }
+
+    @keyframes lifecycle-spin {
+      to { transform: rotate(360deg); }
+    }
+    .lifecycle-spinner {
+      display: inline-block; animation: lifecycle-spin 1s linear infinite;
+    }
+
+    .lifecycle-expand {
+      font-size: 0.7rem; color: #888; cursor: pointer; padding: 0.1rem 0;
+      background: none; border: none;
+    }
+    .lifecycle-expand:hover { color: #ccc; }
+
+    .lifecycle-output {
+      font-family: monospace; font-size: 0.7rem; background: #111;
+      border: 1px solid #333; padding: 0.5rem; margin: 0.3rem 0 0.5rem;
+      max-height: 150px; overflow-y: auto; white-space: pre-wrap;
+      color: #ccc;
+    }
+
+    .lifecycle-type-badge {
+      display: inline-flex; padding: 0.1rem 0.4rem; border-radius: 3px;
+      font-size: 0.65rem; font-weight: 500; background: #1e3a5f; color: #93c5fd;
+      margin-bottom: 0.5rem;
+    }
+
     .error { color: #f87171; padding: 1rem; }
     .loading { color: #666; padding: 2rem; text-align: center; }
 
@@ -201,18 +259,54 @@ export class TrellisSlotDetail extends LitElement {
   }
 
   private _subscribeEvents() {
-    this._eventSource = new EventSource('/api/push?topics=agent:state,agent:eviction');
+    this._eventSource = new EventSource('/api/push?topics=agent:state,agent:eviction,lifecycle:progress');
     this._eventSource.onmessage = (e: MessageEvent) => {
-      this._loadTerminals();
       try {
         const data = JSON.parse(e.data);
         if (data.topic === 'agent:eviction') {
           const candidates = data.payload?.candidates ?? [];
           this._evictionCandidates = new Set(candidates.map((c: { terminalName: string }) => c.terminalName));
           this._totalAgentMemoryMb = candidates.reduce((sum: number, c: { memoryBytes: number }) => sum + Math.round(c.memoryBytes / (1024 * 1024)), 0);
+        } else if (data.topic === 'lifecycle:progress') {
+          this._handleLifecycleEvent(data.payload ?? data);
+        } else {
+          this._loadTerminals();
         }
       } catch { /* ignore parse errors */ }
     };
+  }
+
+  private _handleLifecycleEvent(data: Record<string, unknown>) {
+    if (String(data.slotId) !== String(this.slotNumber)) return;
+    if (data.step) {
+      if (this._operation) {
+        this._operation = {
+          ...this._operation,
+          state: data.operationState as OperationProgress['state'],
+          steps: this._operation.steps.map(s =>
+            s.name === data.step
+              ? { ...s, state: data.state as StepProgress['state'], stdout: data.stdout as string | null, stderr: data.stderr as string | null }
+              : s
+          ),
+        };
+      }
+    } else {
+      if (this._operation) {
+        this._operation = {
+          ...this._operation,
+          state: data.operationState as OperationProgress['state'],
+          errorMessage: data.errorMessage as string | undefined,
+        };
+      }
+      if (data.operationState === 'COMPLETED' || data.operationState === 'FAILED') {
+        this._actionInProgress = null;
+        this._loadSlot();
+        this._loadTerminals();
+        if (data.operationState === 'COMPLETED') {
+          setTimeout(() => { this._operation = null; }, 10000);
+        }
+      }
+    }
   }
 
   override render() {
@@ -305,6 +399,8 @@ export class TrellisSlotDetail extends LitElement {
           ${slot.isEpic ? html`<span class="badge badge-epic">epic</span>` : nothing}
         </div>
 
+        ${this._renderLifecycle()}
+
         <div class="sidebar-section">
           <h3>Issues</h3>
           <div class="meta-item"><span class="meta-value">${slot.issue}</span></div>
@@ -357,6 +453,41 @@ export class TrellisSlotDetail extends LitElement {
                   </div>
                 `)}
         </div>
+      </div>
+    `;
+  }
+
+  private _renderLifecycle() {
+    const op = this._operation;
+    if (!op) return nothing;
+
+    return html`
+      <div class="sidebar-section">
+        <h3>Lifecycle</h3>
+        <span class="lifecycle-type-badge">${op.operationType}</span>
+        ${op.steps.map(s => html`
+          <div class="lifecycle-step ${s.state === 'RUNNING' ? 'lifecycle-step-active' : s.state === 'DONE' ? 'lifecycle-step-done' : s.state === 'FAILED' ? 'lifecycle-step-failed' : 'lifecycle-step-pending'}">
+            <span class="${s.state === 'DONE' ? 'lifecycle-icon-done' : s.state === 'RUNNING' ? 'lifecycle-icon-active lifecycle-spinner' : s.state === 'FAILED' ? 'lifecycle-icon-failed' : 'lifecycle-icon-pending'}">
+              ${s.state === 'DONE' ? '✓' : s.state === 'RUNNING' ? '●' : s.state === 'FAILED' ? '✗' : '○'}
+            </span>
+            <span>${s.name}</span>
+          </div>
+          ${(s.state === 'DONE' || s.state === 'FAILED') && (s.stdout || s.stderr) ? html`
+            <button class="lifecycle-expand"
+                    @click=${() => { this._expandedStep = this._expandedStep === s.name ? null : s.name; }}>
+              ${this._expandedStep === s.name ? '▼' : '▶'} output
+            </button>
+            ${this._expandedStep === s.name ? html`
+              <div class="lifecycle-output">${s.stdout || s.stderr || ''}</div>
+            ` : nothing}
+          ` : nothing}
+          ${s.state === 'FAILED' && this._expandedStep !== s.name && (s.stderr || s.stdout) ? html`
+            <div class="lifecycle-output" style="border-color:#991b1b">${s.stderr || s.stdout || ''}</div>
+          ` : nothing}
+        `)}
+        ${op.errorMessage ? html`
+          <div style="font-size:0.75rem;color:#f87171;margin-top:0.5rem">${op.errorMessage}</div>
+        ` : nothing}
       </div>
     `;
   }
@@ -446,6 +577,18 @@ export class TrellisSlotDetail extends LitElement {
     } catch (e) {
       this._error = `Failed to load slot: ${e}`;
     }
+    try {
+      const opRes = await fetch(`/api/lifecycle/operations?slot=${this.slotNumber}`);
+      if (opRes.ok && opRes.status !== 204) {
+        const body = await opRes.json();
+        if (body && body.operationId) {
+          this._operation = body as OperationProgress;
+          if (body.state === 'RUNNING') {
+            this._actionInProgress = body.operationType;
+          }
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   private _renderAgentButtons(s: AgentSnapshot) {
@@ -559,11 +702,29 @@ export class TrellisSlotDetail extends LitElement {
   }
 
   private async _nextEpic() {
-    await this._lifecycleAction('next', `/api/lifecycle/epic/${this.slotNumber}/next`);
+    this._actionInProgress = 'next';
+    try {
+      const res = await fetch(`/api/lifecycle/epic/${this.slotNumber}/next`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceRoot: this.workspaceRoot }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        this._error = body?.error ?? `next failed: HTTP ${res.status}`;
+      }
+      this._loadSlot();
+      this._loadTerminals();
+    } catch (e) {
+      this._error = `next failed: ${e}`;
+    } finally {
+      this._actionInProgress = null;
+    }
   }
 
   private async _lifecycleAction(name: string, url: string) {
     this._actionInProgress = name;
+    this._expandedStep = null;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -573,12 +734,12 @@ export class TrellisSlotDetail extends LitElement {
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         this._error = body?.error ?? `${name} failed: HTTP ${res.status}`;
+        this._actionInProgress = null;
+        return;
       }
-      this._loadSlot();
-      this._loadTerminals();
+      this._operation = await res.json() as OperationProgress;
     } catch (e) {
       this._error = `${name} failed: ${e}`;
-    } finally {
       this._actionInProgress = null;
     }
   }

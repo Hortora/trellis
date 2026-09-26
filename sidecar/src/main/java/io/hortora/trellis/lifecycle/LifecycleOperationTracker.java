@@ -154,7 +154,7 @@ public class LifecycleOperationTracker {
         });
     }
 
-    void loadOnStartup() {
+    void loadOnStartup(@jakarta.enterprise.event.Observes io.quarkus.runtime.StartupEvent event) {
         if (!Files.isDirectory(operationsDir)) return;
         try (Stream<Path> files = Files.list(operationsDir)) {
             files.filter(f -> f.toString().endsWith(".json")).forEach(f -> {

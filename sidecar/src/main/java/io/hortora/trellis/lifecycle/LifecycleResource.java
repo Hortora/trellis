@@ -118,7 +118,7 @@ public class LifecycleResource {
     @Path("/operations")
     public Response getOperationBySlot(@QueryParam("slot") String slotId) {
         var progress = tracker.getActiveOperation(slotId);
-        if (progress == null) {return Response.ok().build();}
+        if (progress == null) {return Response.noContent().build();}
         return Response.ok(progress).build();
     }
 

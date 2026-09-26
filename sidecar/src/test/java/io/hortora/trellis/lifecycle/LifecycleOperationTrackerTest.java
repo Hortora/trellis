@@ -111,7 +111,7 @@ class LifecycleOperationTrackerTest {
         tracker.stepStarted(opId, "rebase");
 
         var tracker2 = new LifecycleOperationTracker(broadcaster, tempDir);
-        tracker2.loadOnStartup();
+        tracker2.loadOnStartup(null);
         var recovered = tracker2.getProgress(opId);
 
         assertNotNull(recovered);
