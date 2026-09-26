@@ -64,4 +64,48 @@ class LifecycleManagerTest {
 
         manager.unlock("/workspace/a");
     }
+
+    @Test
+    void endStepsReportsProgressToTracker(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        var scriptRunner  = org.mockito.Mockito.mock(ScriptRunner.class);
+        var successResult = new OperationResult(true, 0, java.util.Map.of(), "", "OK");
+        org.mockito.Mockito.when(scriptRunner.run(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                           .thenReturn(successResult);
+        manager.scriptRunner = scriptRunner;
+
+        var broadcaster = org.mockito.Mockito.mock(io.casehub.pages.push.EventBroadcaster.class);
+        var tracker     = new LifecycleOperationTracker(broadcaster, tempDir);
+        var opId = tracker.startOperation("end", "1",
+                                          java.util.List.of("rebase", "push", "stamp"));
+
+        manager.endSteps("1", java.nio.file.Path.of("/workspace"), tracker, opId);
+
+        var progress = tracker.getProgress(opId);
+        assertTrue(progress.steps().stream()
+                           .allMatch(s -> s.state() == StepState.DONE));
+    }
+
+    @Test
+    void endStepsThrowsStepFailedOnScriptFailure(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        var scriptRunner  = org.mockito.Mockito.mock(ScriptRunner.class);
+        var successResult = new OperationResult(true, 0, java.util.Map.of(), "", "");
+        var failResult    = new OperationResult(false, 1, java.util.Map.of(), "conflict", "");
+        org.mockito.Mockito.when(scriptRunner.run(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                           .thenReturn(successResult)
+                           .thenReturn(failResult);
+        manager.scriptRunner = scriptRunner;
+
+        var broadcaster = org.mockito.Mockito.mock(io.casehub.pages.push.EventBroadcaster.class);
+        var tracker     = new LifecycleOperationTracker(broadcaster, tempDir);
+        var opId = tracker.startOperation("end", "1",
+                                          java.util.List.of("rebase", "push", "stamp"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(StepFailedException.class,
+                                                      () -> manager.endSteps("1", java.nio.file.Path.of("/workspace"), tracker, opId));
+
+        var progress = tracker.getProgress(opId);
+        org.junit.jupiter.api.Assertions.assertEquals(StepState.DONE, progress.steps().get(0).state());
+        org.junit.jupiter.api.Assertions.assertEquals(StepState.FAILED, progress.steps().get(1).state());
+        org.junit.jupiter.api.Assertions.assertEquals(StepState.PENDING, progress.steps().get(2).state());
+    }
 }

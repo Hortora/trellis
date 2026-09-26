@@ -97,6 +97,90 @@ public class LifecycleManager {
         });
     }
 
+
+    public void endSteps(String slotId, Path workspaceRoot,
+                         LifecycleOperationTracker tracker, String operationId)
+            throws IOException, InterruptedException, ConcurrentOperationException,
+                   StepFailedException {
+        if (!tryLock(workspaceRoot.toString())) {
+            throw new ConcurrentOperationException("Workspace operation in progress");
+        }
+        try {
+            runTrackedStep(tracker, operationId, "rebase",
+                           () -> scriptRunner.run("work-end", "land_branch.py",
+                                                  List.of("rebase", workspaceRoot.toString())));
+            runTrackedStep(tracker, operationId, "push",
+                           () -> scriptRunner.run("work-end", "land_branch.py",
+                                                  List.of("push", workspaceRoot.toString())));
+            runTrackedStep(tracker, operationId, "stamp",
+                           () -> scriptRunner.run("work-end", "land_branch.py",
+                                                  List.of("stamp", workspaceRoot.toString())));
+            fireWorkspaceChanged(workspaceRoot);
+        } finally {
+            unlock(workspaceRoot.toString());
+        }
+    }
+
+    public void pauseSteps(String slotId, Path workspaceRoot,
+                           LifecycleOperationTracker tracker, String operationId)
+            throws IOException, InterruptedException, ConcurrentOperationException,
+                   StepFailedException {
+        if (!tryLock(workspaceRoot.toString())) {
+            throw new ConcurrentOperationException("Workspace operation in progress");
+        }
+        try {
+            runTrackedStep(tracker, operationId, "commit-wip",
+                           () -> scriptRunner.run("work-pause", "pause_exec.py",
+                                                  List.of("commit-wip", workspaceRoot.toString())));
+            runTrackedStep(tracker, operationId, "push-and-stack",
+                           () -> scriptRunner.run("work-pause", "pause_exec.py",
+                                                  List.of("push-and-stack", workspaceRoot.toString())));
+            fireWorkspaceChanged(workspaceRoot);
+        } finally {
+            unlock(workspaceRoot.toString());
+        }
+    }
+
+    public void resumeSteps(String slotId, Path workspaceRoot,
+                            LifecycleOperationTracker tracker, String operationId)
+            throws IOException, InterruptedException, ConcurrentOperationException,
+                   StepFailedException {
+        if (!tryLock(workspaceRoot.toString())) {
+            throw new ConcurrentOperationException("Workspace operation in progress");
+        }
+        try {
+            runTrackedStep(tracker, operationId, "checkout-branches",
+                           () -> scriptRunner.run("work-resume", "resume_exec.py",
+                                                  List.of("checkout-branches", workspaceRoot.toString())));
+            runTrackedStep(tracker, operationId, "rebase",
+                           () -> scriptRunner.run("work-resume", "resume_exec.py",
+                                                  List.of("rebase", workspaceRoot.toString())));
+            runTrackedStep(tracker, operationId, "reset-wip",
+                           () -> scriptRunner.run("work-resume", "resume_exec.py",
+                                                  List.of("reset-wip", workspaceRoot.toString())));
+            fireWorkspaceChanged(workspaceRoot);
+        } finally {
+            unlock(workspaceRoot.toString());
+        }
+    }
+
+    private void runTrackedStep(LifecycleOperationTracker tracker, String operationId,
+                                String stepName, ScriptOperation scriptOp)
+            throws IOException, InterruptedException, StepFailedException {
+        tracker.stepStarted(operationId, stepName);
+        var result = scriptOp.run();
+        if (!result.success()) {
+            tracker.stepFailed(operationId, stepName, result.rawStdout(), result.stderr());
+            throw new StepFailedException(stepName);
+        }
+        tracker.stepCompleted(operationId, stepName, result.rawStdout(), result.stderr());
+    }
+
+    @FunctionalInterface
+    interface ScriptOperation {
+        OperationResult run() throws IOException, InterruptedException;
+    }
+
     public OperationResult slotCreate(Path workspaceRoot, List<String> args)
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "slotCreate", () -> {
