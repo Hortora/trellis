@@ -1,12 +1,17 @@
 package io.hortora.trellis.lifecycle;
 
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import java.io.IOException;
-
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +24,9 @@ public class LifecycleResource {
 
     @Inject
     SlotAgentCoordinator coordinator;
+    @Inject
+    LifecycleOperationTracker tracker;
+
 
     @POST
     @Path("/start")
@@ -32,21 +40,42 @@ public class LifecycleResource {
     @Path("/end/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response end(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> coordinator.coordinatedEnd(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        try {
+            var progress = coordinator.coordinatedEndAsync(slotId,
+                                                           java.nio.file.Path.of(request.workspaceRoot()));
+            return Response.accepted(progress).build();
+        } catch (ConcurrentOperationException e) {
+            return Response.status(Response.Status.CONFLICT)
+                           .entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     @POST
     @Path("/pause/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response pause(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> coordinator.coordinatedPause(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        try {
+            var progress = coordinator.coordinatedPauseAsync(slotId,
+                                                             java.nio.file.Path.of(request.workspaceRoot()));
+            return Response.accepted(progress).build();
+        } catch (ConcurrentOperationException e) {
+            return Response.status(Response.Status.CONFLICT)
+                           .entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     @POST
     @Path("/resume/{slotId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response resume(@PathParam("slotId") String slotId, WorkspaceRequest request) {
-        return execute(() -> coordinator.coordinatedResume(slotId, java.nio.file.Path.of(request.workspaceRoot())));
+        try {
+            var progress = coordinator.coordinatedResumeAsync(slotId,
+                                                              java.nio.file.Path.of(request.workspaceRoot()));
+            return Response.accepted(progress).build();
+        } catch (ConcurrentOperationException e) {
+            return Response.status(Response.Status.CONFLICT)
+                           .entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     @POST
@@ -74,6 +103,23 @@ public class LifecycleResource {
     @Path("/epic/{epicPath}/next")
     public Response epicNext(@PathParam("epicPath") String epicPath) {
         return execute(() -> manager.epicNext(epicPath));
+    }
+
+
+    @GET
+    @Path("/operations/{operationId}")
+    public Response getOperation(@PathParam("operationId") String operationId) {
+        var progress = tracker.getProgress(operationId);
+        if (progress == null) {return Response.status(Response.Status.NOT_FOUND).build();}
+        return Response.ok(progress).build();
+    }
+
+    @GET
+    @Path("/operations")
+    public Response getOperationBySlot(@QueryParam("slot") String slotId) {
+        var progress = tracker.getActiveOperation(slotId);
+        if (progress == null) {return Response.ok().build();}
+        return Response.ok(progress).build();
     }
 
     private Response execute(LifecycleOperation operation) {

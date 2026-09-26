@@ -2,14 +2,19 @@ package io.hortora.trellis.lifecycle;
 
 import io.hortora.trellis.agent.AgentProcessManager;
 import io.hortora.trellis.agent.AgentState;
+import io.hortora.trellis.scanner.WorkspaceChanged;
 import io.hortora.trellis.terminal.TerminalRegistry;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.context.ManagedExecutor;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
 @ApplicationScoped
@@ -20,6 +25,18 @@ public class SlotAgentCoordinator {
     @Inject LifecycleManager lifecycleManager;
     @Inject AgentProcessManager agentProcessManager;
     @Inject TerminalRegistry terminalRegistry;
+    @Inject
+            LifecycleOperationTracker tracker;
+    @Inject
+            ManagedExecutor executor;
+    @Inject
+    @WorkspaceChanged
+            Event<Path> workspaceChanged;
+    @Inject
+            Event<io.hortora.trellis.coordinator.CoordinatorEvent.LifecycleOperationEvent> lifecycleOperationEvent;
+
+    private final ConcurrentHashMap<String, Semaphore> asyncSlotLocks = new ConcurrentHashMap<>();
+
 
     private final ConcurrentHashMap<String, ReentrantLock> slotLocks = new ConcurrentHashMap<>();
 
@@ -64,6 +81,124 @@ public class SlotAgentCoordinator {
             return lifecycleManager.end(slotId, workspaceRoot);
         } finally {
             lock.unlock();
+        }
+    }
+
+
+    public OperationProgress coordinatedEndAsync(String slotId, Path workspaceRoot)
+        throws ConcurrentOperationException {
+        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        if (!semaphore.tryAcquire()) {
+            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+        }
+        var operationId = tracker.startOperation("end", slotId,
+                                                 List.of("stop-agents", "rebase", "push", "stamp"));
+        var progress = tracker.getProgress(operationId);
+
+        executor.submit(() -> {
+            try {
+                tracker.stepStarted(operationId, "stop-agents");
+                stopAllSlotAgents(slotId);
+                tracker.stepCompleted(operationId, "stop-agents", "", "");
+
+                lifecycleManager.endSteps(slotId, workspaceRoot, tracker, operationId);
+                tracker.operationCompleted(operationId);
+                fireLifecycleEvent("end", true, null);
+                fireWorkspaceChanged(workspaceRoot);
+            } catch (StepFailedException e) {
+                fireLifecycleEvent("end", false, e.getMessage());
+            } catch (Exception e) {
+                tracker.operationFailed(operationId, e.getMessage());
+                fireLifecycleEvent("end", false, e.getMessage());
+            } finally {
+                semaphore.release();
+            }
+        });
+        return progress;
+    }
+
+    public OperationProgress coordinatedPauseAsync(String slotId, Path workspaceRoot)
+        throws ConcurrentOperationException {
+        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        if (!semaphore.tryAcquire()) {
+            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+        }
+        var operationId = tracker.startOperation("pause", slotId,
+                                                 List.of("shutdown-agents", "commit-wip", "push-and-stack"));
+        var progress = tracker.getProgress(operationId);
+
+        executor.submit(() -> {
+            try {
+                tracker.stepStarted(operationId, "shutdown-agents");
+                shutdownSlotAgents(slotId);
+                tracker.stepCompleted(operationId, "shutdown-agents", "", "");
+
+                lifecycleManager.pauseSteps(slotId, workspaceRoot, tracker, operationId);
+                tracker.operationCompleted(operationId);
+                fireLifecycleEvent("pause", true, null);
+                fireWorkspaceChanged(workspaceRoot);
+            } catch (StepFailedException e) {
+                fireLifecycleEvent("pause", false, e.getMessage());
+            } catch (Exception e) {
+                tracker.operationFailed(operationId, e.getMessage());
+                fireLifecycleEvent("pause", false, e.getMessage());
+            } finally {
+                semaphore.release();
+            }
+        });
+        return progress;
+    }
+
+    public OperationProgress coordinatedResumeAsync(String slotId, Path workspaceRoot)
+        throws ConcurrentOperationException {
+        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        if (!semaphore.tryAcquire()) {
+            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+        }
+        var operationId = tracker.startOperation("resume", slotId,
+                                                 List.of("checkout-branches", "rebase", "reset-wip", "resume-agents"));
+        var progress = tracker.getProgress(operationId);
+
+        executor.submit(() -> {
+            try {
+                lifecycleManager.resumeSteps(slotId, workspaceRoot, tracker, operationId);
+
+                tracker.stepStarted(operationId, "resume-agents");
+                resumeCoordinatorPausedAgents(slotId);
+                tracker.stepCompleted(operationId, "resume-agents", "", "");
+
+                tracker.operationCompleted(operationId);
+                fireLifecycleEvent("resume", true, null);
+                fireWorkspaceChanged(workspaceRoot);
+            } catch (StepFailedException e) {
+                fireLifecycleEvent("resume", false, e.getMessage());
+            } catch (Exception e) {
+                tracker.operationFailed(operationId, e.getMessage());
+                fireLifecycleEvent("resume", false, e.getMessage());
+            } finally {
+                semaphore.release();
+            }
+        });
+        return progress;
+    }
+
+    private void fireLifecycleEvent(String operation, boolean success, String detail) {
+        try {
+            if (lifecycleOperationEvent != null) {
+                var event = new io.hortora.trellis.coordinator.CoordinatorEvent.LifecycleOperationEvent(
+                        java.time.Instant.now(), operation, operation, success, detail);
+                lifecycleOperationEvent.fireAsync(event);
+            }
+        } catch (Exception e) {
+            LOG.debugf(e, "Failed to fire LifecycleOperationEvent for %s", operation);
+        }
+    }
+
+    private void fireWorkspaceChanged(Path root) {
+        try {
+            workspaceChanged.fire(root);
+        } catch (Exception e) {
+            LOG.debugf(e, "Failed to fire WorkspaceChanged event for %s", root);
         }
     }
 
