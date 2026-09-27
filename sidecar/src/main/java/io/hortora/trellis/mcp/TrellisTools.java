@@ -6,7 +6,7 @@ import io.hortora.trellis.agent.AgentProcessManager;
 import io.hortora.trellis.agent.ProcessTreeWalker;
 import io.hortora.trellis.agent.StartAgentRequest;
 import io.hortora.trellis.lifecycle.LifecycleManager;
-import io.hortora.trellis.lifecycle.SlotAgentCoordinator;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import io.hortora.trellis.scanner.FileWatcherService;
 import io.hortora.trellis.terminal.SessionLogger;
 import io.hortora.trellis.terminal.TerminalRegistry;
@@ -50,7 +50,7 @@ public class TrellisTools {
     LifecycleManager lifecycleManager;
 
     @Inject
-    SlotAgentCoordinator coordinator;
+    LifecycleCoordinator coordinator;
 
     @Inject
     FileWatcherService fileWatcher;
@@ -290,19 +290,22 @@ public class TrellisTools {
                     yield lifecycleManager.start(root, branch, issue);
                 }
                 case "end" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedEnd(slotId, root);
+                    yield coordinator.coordinatedEnd(ctx, root);
                 }
                 case "pause" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedPause(slotId, root);
+                    yield coordinator.coordinatedPause(ctx, root);
                 }
                 case "resume" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedResume(slotId, root);
+                    yield coordinator.coordinatedResume(ctx, root);
                 }
                 case "slot-create" -> {
                     var root = Path.of((String) p.get("workspaceRoot"));

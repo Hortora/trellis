@@ -15,33 +15,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-class SlotAgentCoordinatorTest {
+class LifecycleCoordinatorTest {
 
     static final Path WORKSPACE = Path.of("/ws");
 
-    LifecycleManager lifecycleManager;
-    AgentProcessManager agentManager;
-    TerminalRegistry registry;
-    SlotAgentCoordinator coordinator;
+    LifecycleManager     lifecycleManager;
+    AgentProcessManager  agentManager;
+    TerminalRegistry     registry;
+    LifecycleCoordinator coordinator;
 
     @BeforeEach
     void setUp() {
         lifecycleManager = mock(LifecycleManager.class);
         agentManager = mock(AgentProcessManager.class);
         registry = mock(TerminalRegistry.class);
-        coordinator = new SlotAgentCoordinator();
+        coordinator = new LifecycleCoordinator();
         // Wire via field injection
         try {
-            var lmField = SlotAgentCoordinator.class.getDeclaredField("lifecycleManager");
+            var lmField = LifecycleCoordinator.class.getDeclaredField("lifecycleManager");
             lmField.setAccessible(true);
             lmField.set(coordinator, lifecycleManager);
-            var amField = SlotAgentCoordinator.class.getDeclaredField("agentProcessManager");
+            var amField = LifecycleCoordinator.class.getDeclaredField("agentProcessManager");
             amField.setAccessible(true);
             amField.set(coordinator, agentManager);
-            var trField = SlotAgentCoordinator.class.getDeclaredField("terminalRegistry");
+            var trField = LifecycleCoordinator.class.getDeclaredField("terminalRegistry");
             trField.setAccessible(true);
             trField.set(coordinator, registry);
         } catch (Exception e) { throw new RuntimeException(e); }
@@ -49,9 +57,9 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void coordinatedPauseShutsDownAgentsBeforeGitOps() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
-        var t3 = new TerminalInfo("t3", "/tmp", "slot-2", null, null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "1", null, null, null);
+        var t3 = new TerminalInfo("t3", "/tmp", "2", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2, t3));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));
@@ -62,7 +70,7 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.pause("slot-1", WORKSPACE))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
-        coordinator.coordinatedPause("slot-1", WORKSPACE);
+        coordinator.coordinatedPause(new WorkContext.SlotContext("1"), WORKSPACE);
 
         verify(agentManager).gracefulShutdown("t1");
         verify(agentManager).gracefulShutdown("t2");
@@ -72,8 +80,8 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void coordinatedResumeRestartsOnlyCoordinatorPausedAgents() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, AgentProcess.pausedByCoordinator("claude"), null));
@@ -82,7 +90,7 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.resume("slot-1", WORKSPACE))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
-        coordinator.coordinatedResume("slot-1", WORKSPACE);
+        coordinator.coordinatedResume(new WorkContext.SlotContext("1"), WORKSPACE);
 
         verify(agentManager).resumeAgent("t1");
         verify(agentManager, never()).resumeAgent("t2");
@@ -93,7 +101,7 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.resume("slot-1", WORKSPACE))
                 .thenReturn(new OperationResult(false, 1, Map.of(), "rebase failed", ""));
 
-        var result = coordinator.coordinatedResume("slot-1", WORKSPACE);
+        var result = coordinator.coordinatedResume(new WorkContext.SlotContext("1"), WORKSPACE);
 
         assertFalse(result.success());
         verify(agentManager, never()).resumeAgent(any());
@@ -109,20 +117,20 @@ class SlotAgentCoordinatorTest {
                 });
 
         var future = Executors.newSingleThreadExecutor().submit(() -> {
-            coordinator.coordinatedPause("slot-1", WORKSPACE);
+            coordinator.coordinatedPause(new WorkContext.SlotContext("1"), WORKSPACE);
             return null;
         });
         Thread.sleep(50);
 
         assertThrows(ConcurrentOperationException.class,
-                () -> coordinator.coordinatedPause("slot-1", WORKSPACE));
+                () -> coordinator.coordinatedPause(new WorkContext.SlotContext("1"), WORKSPACE));
         future.get();
     }
 
     @Test
     void coordinatedEndStopsAllAgentsIncludingPaused() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
-        var t2 = new TerminalInfo("t2", "/tmp", "slot-1", null, null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "1", null, null, null);
+        var t2 = new TerminalInfo("t2", "/tmp", "1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1, t2));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));
@@ -131,7 +139,7 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.end("slot-1", WORKSPACE))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
-        coordinator.coordinatedEnd("slot-1", WORKSPACE);
+        coordinator.coordinatedEnd(new WorkContext.SlotContext("1"), WORKSPACE);
 
         verify(agentManager).stopAgent("t1");
         verify(agentManager).stopAgent("t2");
@@ -140,7 +148,7 @@ class SlotAgentCoordinatorTest {
 
     @Test
     void agentShutdownFailureDoesNotBlockPause() throws Exception {
-        var t1 = new TerminalInfo("t1", "/tmp", "slot-1", null, null, null);
+        var t1 = new TerminalInfo("t1", "/tmp", "1", null, null, null);
         when(registry.list()).thenReturn(List.of(t1));
         when(agentManager.getSnapshot("t1", t1)).thenReturn(
                 new AgentSnapshot("t1", t1, runningAgent(), null));
@@ -148,10 +156,28 @@ class SlotAgentCoordinatorTest {
         when(lifecycleManager.pause("slot-1", WORKSPACE))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
 
-        var result = coordinator.coordinatedPause("slot-1", WORKSPACE);
+        var result = coordinator.coordinatedPause(new WorkContext.SlotContext("1"), WORKSPACE);
 
         assertTrue(result.success());
         verify(lifecycleManager).pause("slot-1", WORKSPACE);
+    }
+
+
+    @Test
+    void coordinatedPauseFindsTerminalByRepoWhenNoSlot() throws Exception {
+        var repoTerm = new TerminalInfo("t1", "/tmp", null, "engine", null, null);
+        var slotTerm = new TerminalInfo("t2", "/tmp", "1", "engine", null, null);
+        when(registry.list()).thenReturn(List.of(repoTerm, slotTerm));
+        when(agentManager.getSnapshot("t1", repoTerm)).thenReturn(
+                new AgentSnapshot("t1", repoTerm, runningAgent(), null));
+        when(lifecycleManager.pause("repo-engine", WORKSPACE))
+                .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
+
+        coordinator.coordinatedPause(new WorkContext.RepoContext("engine"), WORKSPACE);
+
+        verify(agentManager).gracefulShutdown("t1");
+        verify(agentManager, never()).gracefulShutdown("t2");
+        verify(lifecycleManager).pause("repo-engine", WORKSPACE);
     }
 
     private static AgentProcess runningAgent() {

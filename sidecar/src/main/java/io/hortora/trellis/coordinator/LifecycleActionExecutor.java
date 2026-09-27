@@ -3,7 +3,7 @@ package io.hortora.trellis.coordinator;
 import io.hortora.trellis.lifecycle.ConcurrentOperationException;
 import io.hortora.trellis.lifecycle.LifecycleManager;
 import io.hortora.trellis.lifecycle.OperationResult;
-import io.hortora.trellis.lifecycle.SlotAgentCoordinator;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -22,10 +22,10 @@ public class LifecycleActionExecutor implements ActionExecutor {
             "slot.create", "slot.merge", "epic.setup", "epic.next");
 
     private final LifecycleManager     manager;
-    private final SlotAgentCoordinator coordinator;
+    private final LifecycleCoordinator coordinator;
 
     @Inject
-    public LifecycleActionExecutor(LifecycleManager manager, SlotAgentCoordinator coordinator) {
+    public LifecycleActionExecutor(LifecycleManager manager, LifecycleCoordinator coordinator) {
         this.manager     = manager;
         this.coordinator = coordinator;
     }
@@ -55,9 +55,18 @@ public class LifecycleActionExecutor implements ActionExecutor {
         return switch (action.actionType()) {
             case "lifecycle.start" -> manager.start(
                     Path.of(p.get("workspaceRoot")), p.get("branch"), p.get("issue"));
-            case "lifecycle.end" -> coordinator.coordinatedEnd(p.get("slotId"), Path.of(p.get("workspaceRoot")));
-            case "lifecycle.pause" -> coordinator.coordinatedPause(p.get("slotId"), Path.of(p.get("workspaceRoot")));
-            case "lifecycle.resume" -> coordinator.coordinatedResume(p.get("slotId"), Path.of(p.get("workspaceRoot")));
+            case "lifecycle.end" -> {
+                var ctxId = p.containsKey("contextId") ? p.get("contextId") : "slot-" + p.get("slotId");
+                yield coordinator.coordinatedEnd(io.hortora.trellis.lifecycle.WorkContext.parse(ctxId), Path.of(p.get("workspaceRoot")));
+            }
+            case "lifecycle.pause" -> {
+                var ctxId = p.containsKey("contextId") ? p.get("contextId") : "slot-" + p.get("slotId");
+                yield coordinator.coordinatedPause(io.hortora.trellis.lifecycle.WorkContext.parse(ctxId), Path.of(p.get("workspaceRoot")));
+            }
+            case "lifecycle.resume" -> {
+                var ctxId = p.containsKey("contextId") ? p.get("contextId") : "slot-" + p.get("slotId");
+                yield coordinator.coordinatedResume(io.hortora.trellis.lifecycle.WorkContext.parse(ctxId), Path.of(p.get("workspaceRoot")));
+            }
             case "slot.create" -> manager.slotCreate(Path.of(p.get("workspaceRoot")), collectListParams(p));
             case "slot.merge" -> manager.slotMerge(p.get("slotId"), Path.of(p.get("workspaceRoot")));
             case "epic.setup" -> manager.epicSetup(Path.of(p.get("workspaceRoot")), collectListParams(p));

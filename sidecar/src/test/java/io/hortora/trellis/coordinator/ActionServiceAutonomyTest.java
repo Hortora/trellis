@@ -1,6 +1,7 @@
 package io.hortora.trellis.coordinator;
 
 import io.hortora.trellis.config.PreferencesService;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -153,14 +154,14 @@ class ActionServiceAutonomyTest {
         assertEquals(ActionStatus.PROPOSED, svc.getAction(action.id()).status());
     }
 
-    private static io.hortora.trellis.lifecycle.SlotAgentCoordinator stubCoordinator(
+    private static LifecycleCoordinator stubCoordinator(
             LifecycleActionExecutorTest.StubLifecycleManager stub) {
-        var coord = new io.hortora.trellis.lifecycle.SlotAgentCoordinator();
+        var coord = new LifecycleCoordinator();
         try {
-            var lmField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("lifecycleManager");
+            var lmField = LifecycleCoordinator.class.getDeclaredField("lifecycleManager");
             lmField.setAccessible(true);
             lmField.set(coord, stub);
-            var trField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("terminalRegistry");
+            var trField = LifecycleCoordinator.class.getDeclaredField("terminalRegistry");
             trField.setAccessible(true);
             trField.set(coord, new io.hortora.trellis.terminal.TerminalRegistry(null, null, new io.hortora.trellis.mcp.GenerationCounter()) {
                 @Override
@@ -168,7 +169,7 @@ class ActionServiceAutonomyTest {
                     return java.util.List.of();
                 }
             });
-            var amField = io.hortora.trellis.lifecycle.SlotAgentCoordinator.class.getDeclaredField("agentProcessManager");
+            var amField = LifecycleCoordinator.class.getDeclaredField("agentProcessManager");
             amField.setAccessible(true);
             amField.set(coord, org.mockito.Mockito.mock(io.hortora.trellis.agent.AgentProcessManager.class));
         } catch (Exception e) {throw new RuntimeException(e);}

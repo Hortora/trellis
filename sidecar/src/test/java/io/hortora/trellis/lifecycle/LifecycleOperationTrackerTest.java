@@ -8,8 +8,16 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class LifecycleOperationTrackerTest {
 
@@ -25,13 +33,13 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void startOperationCreatesAllStepsPending() {
-        var opId = tracker.startOperation("end", "3",
+        var opId = tracker.startOperation("end", "slot-3",
                 List.of("stop-agents", "rebase", "push", "stamp"));
         var progress = tracker.getProgress(opId);
 
         assertNotNull(progress);
         assertEquals("end", progress.operationType());
-        assertEquals("3", progress.slotId());
+        assertEquals("slot-3", progress.contextId());
         assertEquals(OperationState.RUNNING, progress.state());
         assertEquals(4, progress.steps().size());
         assertTrue(progress.steps().stream()
@@ -41,7 +49,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void stepStartedTransitionsToRunning() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase", "push"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase", "push"));
         tracker.stepStarted(opId, "rebase");
         var progress = tracker.getProgress(opId);
 
@@ -53,7 +61,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void stepCompletedCapturesOutput() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase"));
         tracker.stepStarted(opId, "rebase");
         tracker.stepCompleted(opId, "rebase", "SYNCED=yes", "");
         var step = tracker.getProgress(opId).steps().get(0);
@@ -64,7 +72,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void stepFailedMarksOperationFailed() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase", "push"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase", "push"));
         tracker.stepStarted(opId, "rebase");
         tracker.stepFailed(opId, "rebase", "", "error: conflict");
         var progress = tracker.getProgress(opId);
@@ -76,7 +84,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void operationFailedTransitionsRunningStepToFailed() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase", "push"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase", "push"));
         tracker.stepStarted(opId, "rebase");
         tracker.operationFailed(opId, "Script timed out");
         var progress = tracker.getProgress(opId);
@@ -87,9 +95,9 @@ class LifecycleOperationTrackerTest {
     }
 
     @Test
-    void getActiveOperationBySlotId() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase"));
-        var active = tracker.getActiveOperation("3");
+    void getActiveOperationByContextId() {
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase"));
+        var active = tracker.getActiveOperation("slot-3");
 
         assertNotNull(active);
         assertEquals(opId, active.operationId());
@@ -97,9 +105,9 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void startOperationAutoDismissesPreviousCompleted() {
-        var opId1 = tracker.startOperation("end", "3", List.of("rebase"));
+        var opId1 = tracker.startOperation("end", "slot-3", List.of("rebase"));
         tracker.operationCompleted(opId1);
-        var opId2 = tracker.startOperation("pause", "3", List.of("commit-wip"));
+        var opId2 = tracker.startOperation("pause", "slot-3", List.of("commit-wip"));
 
         assertNull(tracker.getProgress(opId1));
         assertNotNull(tracker.getProgress(opId2));
@@ -107,7 +115,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void filePersistenceOnStartup() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase"));
         tracker.stepStarted(opId, "rebase");
 
         var tracker2 = new LifecycleOperationTracker(broadcaster, tempDir);
@@ -121,7 +129,7 @@ class LifecycleOperationTrackerTest {
 
     @Test
     void operationCompletedTransitionsState() {
-        var opId = tracker.startOperation("end", "3", List.of("rebase"));
+        var opId = tracker.startOperation("end", "slot-3", List.of("rebase"));
         tracker.stepStarted(opId, "rebase");
         tracker.stepCompleted(opId, "rebase", "", "");
         tracker.operationCompleted(opId);
@@ -130,4 +138,23 @@ class LifecycleOperationTrackerTest {
         assertEquals(OperationState.COMPLETED, progress.state());
         assertNotNull(progress.completedAt());
     }
+
+    @Test
+    void startOperationWithRepoContextId() {
+        var opId = tracker.startOperation("end", "repo-engine",
+                                          List.of("stop-agents", "rebase", "push", "stamp"));
+        var progress = tracker.getProgress(opId);
+        assertEquals("repo-engine", progress.contextId());
+        assertEquals(OperationState.RUNNING, progress.state());
+    }
+
+    @Test
+    void concurrentOperationsOnDifferentContextTypes() {
+        var op1 = tracker.startOperation("end", "slot-3", List.of("rebase"));
+        var op2 = tracker.startOperation("pause", "repo-engine", List.of("commit-wip"));
+        assertNotEquals(op1, op2);
+        assertNotNull(tracker.getActiveOperation("slot-3"));
+        assertNotNull(tracker.getActiveOperation("repo-engine"));
+    }
+
 }

@@ -23,7 +23,7 @@ public class LifecycleResource {
     LifecycleManager manager;
 
     @Inject
-    SlotAgentCoordinator coordinator;
+    LifecycleCoordinator      coordinator;
     @Inject
     LifecycleOperationTracker tracker;
 
@@ -37,13 +37,17 @@ public class LifecycleResource {
     }
 
     @POST
-    @Path("/end/{slotId}")
+    @Path("/end/{contextId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response end(@PathParam("slotId") String slotId, WorkspaceRequest request) {
+    public Response end(@PathParam("contextId") String contextId, WorkspaceRequest request) {
         try {
-            var progress = coordinator.coordinatedEndAsync(slotId,
+            var ctx = WorkContext.parse(contextId);
+            var progress = coordinator.coordinatedEndAsync(ctx,
                                                            java.nio.file.Path.of(request.workspaceRoot()));
             return Response.accepted(progress).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                           .entity(Map.of("error", e.getMessage())).build();
         } catch (ConcurrentOperationException e) {
             return Response.status(Response.Status.CONFLICT)
                            .entity(Map.of("error", e.getMessage())).build();
@@ -51,13 +55,17 @@ public class LifecycleResource {
     }
 
     @POST
-    @Path("/pause/{slotId}")
+    @Path("/pause/{contextId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response pause(@PathParam("slotId") String slotId, WorkspaceRequest request) {
+    public Response pause(@PathParam("contextId") String contextId, WorkspaceRequest request) {
         try {
-            var progress = coordinator.coordinatedPauseAsync(slotId,
+            var ctx = WorkContext.parse(contextId);
+            var progress = coordinator.coordinatedPauseAsync(ctx,
                                                              java.nio.file.Path.of(request.workspaceRoot()));
             return Response.accepted(progress).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                           .entity(Map.of("error", e.getMessage())).build();
         } catch (ConcurrentOperationException e) {
             return Response.status(Response.Status.CONFLICT)
                            .entity(Map.of("error", e.getMessage())).build();
@@ -65,13 +73,17 @@ public class LifecycleResource {
     }
 
     @POST
-    @Path("/resume/{slotId}")
+    @Path("/resume/{contextId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response resume(@PathParam("slotId") String slotId, WorkspaceRequest request) {
+    public Response resume(@PathParam("contextId") String contextId, WorkspaceRequest request) {
         try {
-            var progress = coordinator.coordinatedResumeAsync(slotId,
+            var ctx = WorkContext.parse(contextId);
+            var progress = coordinator.coordinatedResumeAsync(ctx,
                                                               java.nio.file.Path.of(request.workspaceRoot()));
             return Response.accepted(progress).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                           .entity(Map.of("error", e.getMessage())).build();
         } catch (ConcurrentOperationException e) {
             return Response.status(Response.Status.CONFLICT)
                            .entity(Map.of("error", e.getMessage())).build();
@@ -116,8 +128,8 @@ public class LifecycleResource {
 
     @GET
     @Path("/operations")
-    public Response getOperationBySlot(@QueryParam("slot") String slotId) {
-        var progress = tracker.getActiveOperation(slotId);
+    public Response getOperationByContext(@QueryParam("context") String contextId) {
+        var progress = tracker.getActiveOperation(contextId);
         if (progress == null) {return Response.noContent().build();}
         return Response.ok(progress).build();
     }
