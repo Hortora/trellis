@@ -4,6 +4,7 @@ import io.hortora.trellis.lifecycle.ConcurrentOperationException;
 import io.hortora.trellis.lifecycle.LifecycleManager;
 import io.hortora.trellis.lifecycle.OperationResult;
 import io.hortora.trellis.lifecycle.LifecycleCoordinator;
+import io.hortora.trellis.lifecycle.WorkContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -91,37 +92,37 @@ class LifecycleActionExecutorTest {
     @Test
     void pauseRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(LifecycleCoordinator.class);
-        when(coordinator.coordinatedPause(eq("s1"), any()))
+        when(coordinator.coordinatedPause(any(WorkContext.class), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.pause", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
         assertTrue(result.success());
-        verify(coordinator).coordinatedPause(eq("s1"), any());
+        verify(coordinator).coordinatedPause(eq(new WorkContext.SlotContext("s1")), any());
     }
 
     @Test
     void resumeRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(LifecycleCoordinator.class);
-        when(coordinator.coordinatedResume(eq("s1"), any()))
+        when(coordinator.coordinatedResume(any(WorkContext.class), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.resume", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
         assertTrue(result.success());
-        verify(coordinator).coordinatedResume(eq("s1"), any());
+        verify(coordinator).coordinatedResume(eq(new WorkContext.SlotContext("s1")), any());
     }
 
     @Test
     void endRoutedThroughCoordinator() throws Exception {
         var coordinator = mock(LifecycleCoordinator.class);
-        when(coordinator.coordinatedEnd(eq("s1"), any()))
+        when(coordinator.coordinatedEnd(any(WorkContext.class), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
         var action   = action("lifecycle.end", Map.of("slotId", "s1", "workspaceRoot", "/ws"));
         var result   = executor.execute(action);
         assertTrue(result.success());
-        verify(coordinator).coordinatedEnd(eq("s1"), any());
+        verify(coordinator).coordinatedEnd(eq(new WorkContext.SlotContext("s1")), any());
     }
 
     private ProposedAction action(String actionType, Map<String, String> params) {
@@ -140,16 +141,16 @@ class LifecycleActionExecutorTest {
         public OperationResult epicNext(String epicPath)                              {return result;}
 
         @Override
-        public OperationResult slotMerge(String slotId, Path workspaceRoot)           {return result;}
+        public OperationResult slotMerge(String contextId, Path workspaceRoot)         {return result;}
 
         @Override
-        public OperationResult end(String slotId, Path workspaceRoot)                 {return result;}
+        public OperationResult end(String contextId, Path workspaceRoot)              {return result;}
 
         @Override
-        public OperationResult pause(String slotId, Path workspaceRoot)               {return result;}
+        public OperationResult pause(String contextId, Path workspaceRoot)            {return result;}
 
         @Override
-        public OperationResult resume(String slotId, Path workspaceRoot)              {return result;}
+        public OperationResult resume(String contextId, Path workspaceRoot)           {return result;}
 
         @Override
         public OperationResult start(Path workspaceRoot, String branch, String issue) {return result;}

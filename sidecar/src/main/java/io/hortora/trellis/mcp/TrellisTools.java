@@ -290,19 +290,22 @@ public class TrellisTools {
                     yield lifecycleManager.start(root, branch, issue);
                 }
                 case "end" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedEnd(slotId, root);
+                    yield coordinator.coordinatedEnd(ctx, root);
                 }
                 case "pause" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedPause(slotId, root);
+                    yield coordinator.coordinatedPause(ctx, root);
                 }
                 case "resume" -> {
-                    var slotId = (String) p.get("slotId");
+                    var ctxId = p.containsKey("contextId") ? (String) p.get("contextId") : "slot-" + p.get("slotId");
+                    var ctx = io.hortora.trellis.lifecycle.WorkContext.parse(ctxId);
                     var root = Path.of((String) p.get("workspaceRoot"));
-                    yield coordinator.coordinatedResume(slotId, root);
+                    yield coordinator.coordinatedResume(ctx, root);
                 }
                 case "slot-create" -> {
                     var root = Path.of((String) p.get("workspaceRoot"));
