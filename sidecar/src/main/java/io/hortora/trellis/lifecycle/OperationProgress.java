@@ -1,12 +1,14 @@
 package io.hortora.trellis.lifecycle;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.time.Instant;
 import java.util.List;
 
 public record OperationProgress(
     String operationId,
     String operationType,
-    String slotId,
+    @JsonAlias("slotId") String contextId,
     OperationState state,
     List<StepProgress> steps,
     Instant startedAt,
@@ -17,12 +19,12 @@ public record OperationProgress(
         var newSteps = steps.stream()
                 .map(s -> s.name().equals(stepName) ? updated : s)
                 .toList();
-        return new OperationProgress(operationId, operationType, slotId,
+        return new OperationProgress(operationId, operationType, contextId,
                 state, List.copyOf(newSteps), startedAt, completedAt, errorMessage);
     }
 
     public OperationProgress withState(OperationState state) {
-        return new OperationProgress(operationId, operationType, slotId,
+        return new OperationProgress(operationId, operationType, contextId,
                 state, steps, startedAt,
                 state != OperationState.RUNNING ? Instant.now() : completedAt,
                 errorMessage);
@@ -34,7 +36,7 @@ public record OperationProgress(
                         ? s.withOutput(StepState.FAILED, null, errorMessage)
                         : s)
                 .toList();
-        return new OperationProgress(operationId, operationType, slotId,
+        return new OperationProgress(operationId, operationType, contextId,
                 OperationState.FAILED, List.copyOf(fixedSteps), startedAt,
                 Instant.now(), errorMessage);
     }

@@ -31,7 +31,7 @@ public class LifecycleOperationTracker {
     private static final Duration FAILED_TTL = Duration.ofHours(1);
 
     private final ConcurrentHashMap<String, OperationProgress> operations = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> slotToOperation = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> contextToOperation = new ConcurrentHashMap<>();
     private final EventBroadcaster broadcaster;
     private final Path operationsDir;
 
@@ -49,13 +49,13 @@ public class LifecycleOperationTracker {
         this.operationsDir = operationsDir;
     }
 
-    public String startOperation(String type, String slotId, List<String> stepNames) {
-        var existing = slotToOperation.get(slotId);
+    public String startOperation(String type, String contextId, List<String> stepNames) {
+        var existing = contextToOperation.get(contextId);
         if (existing != null) {
             var prev = operations.get(existing);
             if (prev != null && prev.state() != OperationState.RUNNING) {
                 operations.remove(existing);
-                slotToOperation.remove(slotId);
+                contextToOperation.remove(contextId);
                 deleteFile(existing);
             }
         }
@@ -64,10 +64,10 @@ public class LifecycleOperationTracker {
         var steps = stepNames.stream()
                 .map(StepProgress::new)
                 .toList();
-        var progress = new OperationProgress(operationId, type, slotId,
+        var progress = new OperationProgress(operationId, type, contextId,
                 OperationState.RUNNING, List.copyOf(steps), Instant.now(), null, null);
         operations.put(operationId, progress);
-        slotToOperation.put(slotId, operationId);
+        contextToOperation.put(contextId, operationId);
         persist(progress);
         return operationId;
     }
@@ -126,8 +126,8 @@ public class LifecycleOperationTracker {
         return operations.get(operationId);
     }
 
-    public OperationProgress getActiveOperation(String slotId) {
-        var opId = slotToOperation.get(slotId);
+    public OperationProgress getActiveOperation(String contextId) {
+        var opId = contextToOperation.get(contextId);
         return opId != null ? operations.get(opId) : null;
     }
 
@@ -139,14 +139,14 @@ public class LifecycleOperationTracker {
             if (op.state() == OperationState.COMPLETED
                     && op.completedAt() != null
                     && Duration.between(op.completedAt(), now).compareTo(COMPLETED_TTL) > 0) {
-                slotToOperation.remove(op.slotId(), e.getKey());
+                contextToOperation.remove(op.contextId(), e.getKey());
                 deleteFile(e.getKey());
                 return true;
             }
             if (op.state() == OperationState.FAILED
                     && op.completedAt() != null
                     && Duration.between(op.completedAt(), now).compareTo(FAILED_TTL) > 0) {
-                slotToOperation.remove(op.slotId(), e.getKey());
+                contextToOperation.remove(op.contextId(), e.getKey());
                 deleteFile(e.getKey());
                 return true;
             }
@@ -164,7 +164,7 @@ public class LifecycleOperationTracker {
                         op = op.withFailed("Sidecar restarted during operation");
                     }
                     operations.put(op.operationId(), op);
-                    slotToOperation.put(op.slotId(), op.operationId());
+                    contextToOperation.put(op.contextId(), op.operationId());
                 } catch (IOException e) {
                     LOG.warnf("Failed to load operation file %s: %s", f, e.getMessage());
                 }
@@ -205,7 +205,7 @@ public class LifecycleOperationTracker {
     private void broadcastStep(OperationProgress op, StepProgress step) {
         var payload = new HashMap<String, Object>();
         payload.put("operationId", op.operationId());
-        payload.put("slotId", op.slotId());
+        payload.put("contextId", op.contextId());
         payload.put("operationType", op.operationType());
         payload.put("step", step.name());
         payload.put("state", step.state().name());
@@ -218,7 +218,7 @@ public class LifecycleOperationTracker {
     private void broadcastOperation(OperationProgress op) {
         var payload = new HashMap<String, Object>();
         payload.put("operationId", op.operationId());
-        payload.put("slotId", op.slotId());
+        payload.put("contextId", op.contextId());
         payload.put("operationType", op.operationType());
         payload.put("step", null);
         payload.put("state", null);
