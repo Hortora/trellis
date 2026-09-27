@@ -13,10 +13,20 @@ describe('backlog filter logic', () => {
     expect(applyFilters(ITEMS, {})).toHaveLength(3);
   });
 
-  it('filters by repo', () => {
-    const result = applyFilters(ITEMS, { repo: 'Org/repo' });
+  it('filters by single repo', () => {
+    const result = applyFilters(ITEMS, { repo: new Set(['Org/repo']) });
     expect(result).toHaveLength(2);
     expect(result.every(i => i.issueRepo === 'Org/repo')).toBe(true);
+  });
+
+  it('filters by multiple repos', () => {
+    const result = applyFilters(ITEMS, { repo: new Set(['Org/repo', 'Org/other']) });
+    expect(result).toHaveLength(3);
+  });
+
+  it('empty repo Set shows all items', () => {
+    const result = applyFilters(ITEMS, { repo: new Set() });
+    expect(result).toHaveLength(3);
   });
 
   it('filters by strategicRole', () => {
@@ -25,8 +35,8 @@ describe('backlog filter logic', () => {
     expect(result[0].issueNumber).toBe(1);
   });
 
-  it('composes multiple filters', () => {
-    const result = applyFilters(ITEMS, { repo: 'Org/repo', readiness: 'ready' });
+  it('composes repo multi-select with other filters', () => {
+    const result = applyFilters(ITEMS, { repo: new Set(['Org/repo']), readiness: 'ready' });
     expect(result).toHaveLength(1);
     expect(result[0].issueNumber).toBe(1);
   });

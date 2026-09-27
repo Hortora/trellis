@@ -23,6 +23,7 @@ export interface BacklogItem {
 }
 
 export type FilterKey = 'repo' | 'strategicRole' | 'readiness' | 'decay' | 'blastRadius' | 'cohesion';
+export type FilterValue = string | Set<string>;
 
 const COL = {
   key: columnId('key'),
@@ -43,13 +44,18 @@ const BLAST_COLORS: Record<string, string> = { isolated: '#166534', 'cross-cutti
 
 export function applyFilters(
   items: BacklogItem[],
-  filters: Partial<Record<FilterKey, string>>
+  filters: Partial<Record<FilterKey, FilterValue>>
 ): BacklogItem[] {
   return items.filter(item => {
     for (const [key, value] of Object.entries(filters)) {
       if (!value) continue;
       const field = key === 'repo' ? 'issueRepo' : key;
-      if ((item as any)[field] !== value) return false;
+      const itemValue = (item as any)[field];
+      if (value instanceof Set) {
+        if (value.size > 0 && !value.has(itemValue)) return false;
+      } else {
+        if (itemValue !== value) return false;
+      }
     }
     return true;
   });
@@ -69,8 +75,9 @@ export class TrellisBacklogPanel extends LitElement {
   @state() private _items: BacklogItem[] = [];
   @state() private _error: string | null = null;
   @state() private _loading = false;
-  @state() private _filters: Partial<Record<FilterKey, string>> = {};
+  @state() private _filters: Partial<Record<FilterKey, FilterValue>> = {};
   @state() private _activeItem: BacklogItem | null = null;
+  @state() private _repoDropdownOpen = false;
 
   private _refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _unsubWorkspace: (() => void) | null = null;
@@ -92,6 +99,7 @@ export class TrellisBacklogPanel extends LitElement {
       this._refreshInterval = null;
     }
     this._unsubWorkspace?.();
+    document.removeEventListener('click', this._onDocClick);
   }
 
   private async _load() {
@@ -128,6 +136,45 @@ export class TrellisBacklogPanel extends LitElement {
 
   private _setFilter(key: FilterKey, value: string) {
     this._filters = { ...this._filters, [key]: value || undefined };
+  }
+
+  private _toggleRepo(repo: string, checked: boolean) {
+    const current = this._filters.repo instanceof Set ? new Set(this._filters.repo) : new Set<string>();
+    if (checked) current.add(repo); else current.delete(repo);
+    this._filters = { ...this._filters, repo: current.size > 0 ? current : undefined };
+  }
+
+  private _onDocClick = () => { this._repoDropdownOpen = false; };
+
+  private _renderRepoFilter() {
+    const repos = this._distinctValues('issueRepo');
+    if (repos.length === 0) return nothing;
+    const selected = this._filters.repo instanceof Set ? this._filters.repo : new Set<string>();
+    const label = selected.size === 0 ? 'Repo: All' : `Repo: ${selected.size}`;
+    return html`
+      <div class="multi-filter" @click=${(e: Event) => e.stopPropagation()}>
+        <button class="filter-btn" @click=${() => {
+          if (!this._repoDropdownOpen) {
+            this._repoDropdownOpen = true;
+            requestAnimationFrame(() => document.addEventListener('click', this._onDocClick, { once: true }));
+          } else {
+            this._repoDropdownOpen = false;
+          }
+        }}>${label} ▾</button>
+        ${this._repoDropdownOpen ? html`
+          <div class="filter-dropdown">
+            ${repos.map(repo => html`
+              <label class="filter-option">
+                <input type="checkbox"
+                  .checked=${selected.has(repo)}
+                  @change=${(e: Event) => this._toggleRepo(repo, (e.target as HTMLInputElement).checked)}>
+                ${repo}
+              </label>
+            `)}
+          </div>
+        ` : nothing}
+      </div>
+    `;
   }
 
   private _buildDataSet(): TypedDataSet {
@@ -229,6 +276,24 @@ export class TrellisBacklogPanel extends LitElement {
       padding: 0.3rem 0.5rem; background: #2a2a2a; border: 1px solid #444;
       border-radius: 4px; color: #ccc; font-size: 0.75rem;
     }
+    .multi-filter { position: relative; }
+    .filter-btn {
+      padding: 0.3rem 0.5rem; background: #2a2a2a; border: 1px solid #444;
+      border-radius: 4px; color: #ccc; font-size: 0.75rem; cursor: pointer;
+    }
+    .filter-btn:hover { border-color: #666; }
+    .filter-dropdown {
+      position: absolute; top: 100%; left: 0; z-index: 10;
+      background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+      padding: 0.25rem 0; margin-top: 2px; min-width: 180px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .filter-option {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 0.5rem; color: #ccc; font-size: 0.75rem; cursor: pointer;
+    }
+    .filter-option:hover { background: #333; }
+    .filter-option input[type="checkbox"] { accent-color: #60a5fa; }
 
     .empty { color: #666; padding: 2rem; text-align: center; font-style: italic; }
     .error { color: #f87171; padding: 1rem; }
@@ -266,7 +331,7 @@ export class TrellisBacklogPanel extends LitElement {
         </div>
 
         <div class="filters">
-          ${this._renderFilter('repo', 'Repo', 'issueRepo')}
+          ${this._renderRepoFilter()}
           ${this._renderFilter('strategicRole', 'Role', 'strategicRole')}
           ${this._renderFilter('readiness', 'Ready', 'readiness')}
           ${this._renderFilter('decay', 'Decay', 'decay')}
