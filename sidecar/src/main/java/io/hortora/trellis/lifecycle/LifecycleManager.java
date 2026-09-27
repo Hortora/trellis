@@ -195,7 +195,7 @@ public class LifecycleManager {
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "slotMerge", () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",
-                    List.of("merge-slot", slotId));
+                    List.of("merge-slot", contextId));
             fireWorkspaceChanged(workspaceRoot);
             return result;
         });
