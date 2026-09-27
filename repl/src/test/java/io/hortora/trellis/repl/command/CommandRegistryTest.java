@@ -136,6 +136,18 @@ class CommandRegistryTest {
         assertThat(goal.execute()).containsExactly("soredium:start --issue {issue}");
     }
 
+    @Test
+    void loadsAllGoalsFromProductionYaml() {
+        var registry = CommandRegistry.load(
+                CommandRegistryTest.class.getResourceAsStream("/commands.yaml"));
+        assertThat(registry.goals()).containsKeys("start-work", "end-work", "advance-issue", "create-slot");
+        assertThat(registry.goals().get("end-work").execute()).containsExactly("soredium:end");
+        assertThat(registry.goals().get("advance-issue").execute()).containsExactly("soredium:next");
+        assertThat(registry.goals().get("create-slot").execute())
+                .first().asString().contains("slot-create");
+    }
+
+
     private static CommandRegistry load(String yaml) {
         return CommandRegistry.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
     }

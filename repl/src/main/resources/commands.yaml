@@ -105,3 +105,34 @@ goals:
         prompt: "Proceed?"
     execute:
       - "soredium:start --issue {which_issue_}"
+
+  end-work:
+    description: "Close current branch (merge, push, return to main)"
+    steps:
+      - type: confirm
+        prompt: "Close this branch and merge to main?"
+    execute:
+      - "soredium:end"
+
+  advance-issue:
+    description: "Mark current issue done, advance to next in queue"
+    steps:
+      - type: confirm
+        prompt: "Current issue is done — advance to next?"
+    execute:
+      - "soredium:next"
+
+  create-slot:
+    description: "Create a new parallel work slot"
+    steps:
+      - prompt: "Which issue?"
+        source: "github:open-issues"
+        type: select
+      - prompt: "ISX isolation?"
+        type: confirm
+        default: false
+      - type: summary
+      - type: confirm
+        prompt: "Create slot?"
+    execute:
+      - "soredium:slot-create --issue {which_issue_}"
