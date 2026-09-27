@@ -6,7 +6,7 @@ import io.hortora.trellis.agent.AgentProcessManager;
 import io.hortora.trellis.agent.ProcessTreeWalker;
 import io.hortora.trellis.agent.StartAgentRequest;
 import io.hortora.trellis.lifecycle.LifecycleManager;
-import io.hortora.trellis.lifecycle.SlotAgentCoordinator;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import io.hortora.trellis.scanner.FileWatcherService;
 import io.hortora.trellis.terminal.SessionLogger;
 import io.hortora.trellis.terminal.TerminalRegistry;
@@ -50,7 +50,7 @@ public class TrellisTools {
     LifecycleManager lifecycleManager;
 
     @Inject
-    SlotAgentCoordinator coordinator;
+    LifecycleCoordinator coordinator;
 
     @Inject
     FileWatcherService fileWatcher;

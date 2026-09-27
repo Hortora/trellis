@@ -3,7 +3,7 @@ package io.hortora.trellis.coordinator;
 import io.hortora.trellis.lifecycle.ConcurrentOperationException;
 import io.hortora.trellis.lifecycle.LifecycleManager;
 import io.hortora.trellis.lifecycle.OperationResult;
-import io.hortora.trellis.lifecycle.SlotAgentCoordinator;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -90,7 +90,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void pauseRoutedThroughCoordinator() throws Exception {
-        var coordinator = mock(SlotAgentCoordinator.class);
+        var coordinator = mock(LifecycleCoordinator.class);
         when(coordinator.coordinatedPause(eq("s1"), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
@@ -102,7 +102,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void resumeRoutedThroughCoordinator() throws Exception {
-        var coordinator = mock(SlotAgentCoordinator.class);
+        var coordinator = mock(LifecycleCoordinator.class);
         when(coordinator.coordinatedResume(eq("s1"), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);
@@ -114,7 +114,7 @@ class LifecycleActionExecutorTest {
 
     @Test
     void endRoutedThroughCoordinator() throws Exception {
-        var coordinator = mock(SlotAgentCoordinator.class);
+        var coordinator = mock(LifecycleCoordinator.class);
         when(coordinator.coordinatedEnd(eq("s1"), any()))
                 .thenReturn(new OperationResult(true, 0, Map.of(), "", ""));
         var executor = new LifecycleActionExecutor(new LifecycleManager(), coordinator);

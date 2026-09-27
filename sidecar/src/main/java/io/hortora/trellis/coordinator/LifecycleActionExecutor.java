@@ -3,7 +3,7 @@ package io.hortora.trellis.coordinator;
 import io.hortora.trellis.lifecycle.ConcurrentOperationException;
 import io.hortora.trellis.lifecycle.LifecycleManager;
 import io.hortora.trellis.lifecycle.OperationResult;
-import io.hortora.trellis.lifecycle.SlotAgentCoordinator;
+import io.hortora.trellis.lifecycle.LifecycleCoordinator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -22,10 +22,10 @@ public class LifecycleActionExecutor implements ActionExecutor {
             "slot.create", "slot.merge", "epic.setup", "epic.next");
 
     private final LifecycleManager     manager;
-    private final SlotAgentCoordinator coordinator;
+    private final LifecycleCoordinator coordinator;
 
     @Inject
-    public LifecycleActionExecutor(LifecycleManager manager, SlotAgentCoordinator coordinator) {
+    public LifecycleActionExecutor(LifecycleManager manager, LifecycleCoordinator coordinator) {
         this.manager     = manager;
         this.coordinator = coordinator;
     }

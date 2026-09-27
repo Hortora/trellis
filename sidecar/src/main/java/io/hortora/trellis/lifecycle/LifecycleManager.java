@@ -47,7 +47,7 @@ public class LifecycleManager {
         });
     }
 
-    public OperationResult end(String slotId, Path workspaceRoot)
+    public OperationResult end(String contextId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "end", () -> {
             var rebaseResult = scriptRunner.run("work-end", "land_branch.py",
@@ -65,7 +65,7 @@ public class LifecycleManager {
         });
     }
 
-    public OperationResult pause(String slotId, Path workspaceRoot)
+    public OperationResult pause(String contextId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "pause", () -> {
             var wipResult = scriptRunner.run("work-pause", "pause_exec.py",
@@ -79,7 +79,7 @@ public class LifecycleManager {
         });
     }
 
-    public OperationResult resume(String slotId, Path workspaceRoot)
+    public OperationResult resume(String contextId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "resume", () -> {
             var checkoutResult = scriptRunner.run("work-resume", "resume_exec.py",
@@ -98,7 +98,7 @@ public class LifecycleManager {
     }
 
 
-    public void endSteps(String slotId, Path workspaceRoot,
+    public void endSteps(String contextId, Path workspaceRoot,
                          LifecycleOperationTracker tracker, String operationId)
             throws IOException, InterruptedException, ConcurrentOperationException,
                    StepFailedException {
@@ -121,7 +121,7 @@ public class LifecycleManager {
         }
     }
 
-    public void pauseSteps(String slotId, Path workspaceRoot,
+    public void pauseSteps(String contextId, Path workspaceRoot,
                            LifecycleOperationTracker tracker, String operationId)
             throws IOException, InterruptedException, ConcurrentOperationException,
                    StepFailedException {
@@ -141,7 +141,7 @@ public class LifecycleManager {
         }
     }
 
-    public void resumeSteps(String slotId, Path workspaceRoot,
+    public void resumeSteps(String contextId, Path workspaceRoot,
                             LifecycleOperationTracker tracker, String operationId)
             throws IOException, InterruptedException, ConcurrentOperationException,
                    StepFailedException {
@@ -191,7 +191,7 @@ public class LifecycleManager {
         });
     }
 
-    public OperationResult slotMerge(String slotId, Path workspaceRoot)
+    public OperationResult slotMerge(String contextId, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
         return withLock(workspaceRoot.toString(), "slotMerge", () -> {
             var result = scriptRunner.run("work-slot", "slot_manager.py",

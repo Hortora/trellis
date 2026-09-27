@@ -23,7 +23,7 @@ public class LifecycleResource {
     LifecycleManager manager;
 
     @Inject
-    SlotAgentCoordinator coordinator;
+    LifecycleCoordinator      coordinator;
     @Inject
     LifecycleOperationTracker tracker;
 

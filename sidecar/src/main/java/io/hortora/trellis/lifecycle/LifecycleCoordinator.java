@@ -3,6 +3,7 @@ package io.hortora.trellis.lifecycle;
 import io.hortora.trellis.agent.AgentProcessManager;
 import io.hortora.trellis.agent.AgentState;
 import io.hortora.trellis.scanner.WorkspaceChanged;
+import io.hortora.trellis.terminal.TerminalInfo;
 import io.hortora.trellis.terminal.TerminalRegistry;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -18,9 +19,9 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
 @ApplicationScoped
-public class SlotAgentCoordinator {
+public class LifecycleCoordinator {
 
-    private static final Logger LOG = Logger.getLogger(SlotAgentCoordinator.class);
+    private static final Logger LOG = Logger.getLogger(LifecycleCoordinator.class);
 
     @Inject LifecycleManager lifecycleManager;
     @Inject AgentProcessManager agentProcessManager;
@@ -35,73 +36,73 @@ public class SlotAgentCoordinator {
     @Inject
             Event<io.hortora.trellis.coordinator.CoordinatorEvent.LifecycleOperationEvent> lifecycleOperationEvent;
 
-    private final ConcurrentHashMap<String, Semaphore> asyncSlotLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Semaphore> asyncContextLocks = new ConcurrentHashMap<>();
 
 
-    private final ConcurrentHashMap<String, ReentrantLock> slotLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> contextLocks = new ConcurrentHashMap<>();
 
-    public OperationResult coordinatedPause(String slotId, Path workspaceRoot)
+    public OperationResult coordinatedPause(WorkContext context, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        var lock = slotLocks.computeIfAbsent(slotId, k -> new ReentrantLock());
+        var lock = contextLocks.computeIfAbsent(context.key(), k -> new ReentrantLock());
         if (!lock.tryLock()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
         try {
-            shutdownSlotAgents(slotId);
-            return lifecycleManager.pause(slotId, workspaceRoot);
+            shutdownAgents(context);
+            return lifecycleManager.pause(context.key(), workspaceRoot);
         } finally {
             lock.unlock();
         }
     }
 
-    public OperationResult coordinatedResume(String slotId, Path workspaceRoot)
+    public OperationResult coordinatedResume(WorkContext context, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        var lock = slotLocks.computeIfAbsent(slotId, k -> new ReentrantLock());
+        var lock = contextLocks.computeIfAbsent(context.key(), k -> new ReentrantLock());
         if (!lock.tryLock()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
         try {
-            var result = lifecycleManager.resume(slotId, workspaceRoot);
+            var result = lifecycleManager.resume(context.key(), workspaceRoot);
             if (!result.success()) return result;
-            resumeCoordinatorPausedAgents(slotId);
+            resumePausedAgents(context);
             return result;
         } finally {
             lock.unlock();
         }
     }
 
-    public OperationResult coordinatedEnd(String slotId, Path workspaceRoot)
+    public OperationResult coordinatedEnd(WorkContext context, Path workspaceRoot)
             throws IOException, InterruptedException, ConcurrentOperationException {
-        var lock = slotLocks.computeIfAbsent(slotId, k -> new ReentrantLock());
+        var lock = contextLocks.computeIfAbsent(context.key(), k -> new ReentrantLock());
         if (!lock.tryLock()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
         try {
-            stopAllSlotAgents(slotId);
-            return lifecycleManager.end(slotId, workspaceRoot);
+            stopAllAgents(context);
+            return lifecycleManager.end(context.key(), workspaceRoot);
         } finally {
             lock.unlock();
         }
     }
 
 
-    public OperationProgress coordinatedEndAsync(String slotId, Path workspaceRoot)
+    public OperationProgress coordinatedEndAsync(WorkContext context, Path workspaceRoot)
         throws ConcurrentOperationException {
-        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        var semaphore = asyncContextLocks.computeIfAbsent(context.key(), k -> new Semaphore(1));
         if (!semaphore.tryAcquire()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
-        var operationId = tracker.startOperation("end", slotId,
+        var operationId = tracker.startOperation("end", context.key(),
                                                  List.of("stop-agents", "rebase", "push", "stamp"));
         var progress = tracker.getProgress(operationId);
 
         executor.submit(() -> {
             try {
                 tracker.stepStarted(operationId, "stop-agents");
-                stopAllSlotAgents(slotId);
+                stopAllAgents(context);
                 tracker.stepCompleted(operationId, "stop-agents", "", "");
 
-                lifecycleManager.endSteps(slotId, workspaceRoot, tracker, operationId);
+                lifecycleManager.endSteps(context.key(), workspaceRoot, tracker, operationId);
                 tracker.operationCompleted(operationId);
                 fireLifecycleEvent("end", true, null);
                 fireWorkspaceChanged(workspaceRoot);
@@ -117,23 +118,23 @@ public class SlotAgentCoordinator {
         return progress;
     }
 
-    public OperationProgress coordinatedPauseAsync(String slotId, Path workspaceRoot)
+    public OperationProgress coordinatedPauseAsync(WorkContext context, Path workspaceRoot)
         throws ConcurrentOperationException {
-        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        var semaphore = asyncContextLocks.computeIfAbsent(context.key(), k -> new Semaphore(1));
         if (!semaphore.tryAcquire()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
-        var operationId = tracker.startOperation("pause", slotId,
+        var operationId = tracker.startOperation("pause", context.key(),
                                                  List.of("shutdown-agents", "commit-wip", "push-and-stack"));
         var progress = tracker.getProgress(operationId);
 
         executor.submit(() -> {
             try {
                 tracker.stepStarted(operationId, "shutdown-agents");
-                shutdownSlotAgents(slotId);
+                shutdownAgents(context);
                 tracker.stepCompleted(operationId, "shutdown-agents", "", "");
 
-                lifecycleManager.pauseSteps(slotId, workspaceRoot, tracker, operationId);
+                lifecycleManager.pauseSteps(context.key(), workspaceRoot, tracker, operationId);
                 tracker.operationCompleted(operationId);
                 fireLifecycleEvent("pause", true, null);
                 fireWorkspaceChanged(workspaceRoot);
@@ -149,22 +150,22 @@ public class SlotAgentCoordinator {
         return progress;
     }
 
-    public OperationProgress coordinatedResumeAsync(String slotId, Path workspaceRoot)
+    public OperationProgress coordinatedResumeAsync(WorkContext context, Path workspaceRoot)
         throws ConcurrentOperationException {
-        var semaphore = asyncSlotLocks.computeIfAbsent(slotId, k -> new Semaphore(1));
+        var semaphore = asyncContextLocks.computeIfAbsent(context.key(), k -> new Semaphore(1));
         if (!semaphore.tryAcquire()) {
-            throw new ConcurrentOperationException("Coordinated operation in progress for slot: " + slotId);
+            throw new ConcurrentOperationException("Coordinated operation in progress for: " + context.key());
         }
-        var operationId = tracker.startOperation("resume", slotId,
+        var operationId = tracker.startOperation("resume", context.key(),
                                                  List.of("checkout-branches", "rebase", "reset-wip", "resume-agents"));
         var progress = tracker.getProgress(operationId);
 
         executor.submit(() -> {
             try {
-                lifecycleManager.resumeSteps(slotId, workspaceRoot, tracker, operationId);
+                lifecycleManager.resumeSteps(context.key(), workspaceRoot, tracker, operationId);
 
                 tracker.stepStarted(operationId, "resume-agents");
-                resumeCoordinatorPausedAgents(slotId);
+                resumePausedAgents(context);
                 tracker.stepCompleted(operationId, "resume-agents", "", "");
 
                 tracker.operationCompleted(operationId);
@@ -202,11 +203,17 @@ public class SlotAgentCoordinator {
         }
     }
 
-    private void shutdownSlotAgents(String slotId) {
-        var terminals = terminalRegistry.list().stream()
-                .filter(t -> slotId.equals(t.slot()))
-                .toList();
-        terminals.parallelStream().forEach(t -> {
+    private List<TerminalInfo> findTerminals(WorkContext ctx) {
+        return switch (ctx) {
+            case WorkContext.SlotContext s -> terminalRegistry.list().stream()
+                .filter(t -> s.slotId().equals(t.slot())).toList();
+            case WorkContext.RepoContext r -> terminalRegistry.list().stream()
+                .filter(t -> r.repoName().equals(t.repo()) && t.slot() == null).toList();
+        };
+    }
+
+    private void shutdownAgents(WorkContext ctx) {
+        findTerminals(ctx).parallelStream().forEach(t -> {
             var snapshot = agentProcessManager.getSnapshot(t.name(), t);
             if (snapshot.process() != null && snapshot.process().state() == AgentState.RUNNING) {
                 try {
@@ -218,11 +225,8 @@ public class SlotAgentCoordinator {
         });
     }
 
-    private void resumeCoordinatorPausedAgents(String slotId) {
-        var terminals = terminalRegistry.list().stream()
-                .filter(t -> slotId.equals(t.slot()))
-                .toList();
-        for (var t : terminals) {
+    private void resumePausedAgents(WorkContext ctx) {
+        for (var t : findTerminals(ctx)) {
             var snapshot = agentProcessManager.getSnapshot(t.name(), t);
             if (snapshot.process() != null
                     && snapshot.process().state() == AgentState.PAUSED_BY_COORDINATOR) {
@@ -235,11 +239,8 @@ public class SlotAgentCoordinator {
         }
     }
 
-    private void stopAllSlotAgents(String slotId) {
-        var terminals = terminalRegistry.list().stream()
-                .filter(t -> slotId.equals(t.slot()))
-                .toList();
-        terminals.parallelStream().forEach(t -> {
+    private void stopAllAgents(WorkContext ctx) {
+        findTerminals(ctx).parallelStream().forEach(t -> {
             var snapshot = agentProcessManager.getSnapshot(t.name(), t);
             if (snapshot.process() != null) {
                 try {
