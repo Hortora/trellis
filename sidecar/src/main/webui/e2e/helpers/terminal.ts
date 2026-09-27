@@ -103,6 +103,38 @@ export async function sendText(page: Page, text: string): Promise<boolean> {
   }, text);
 }
 
+export async function waitForOutput(
+  page: Page,
+  pattern: string,
+  timeoutMs = 10_000
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const found = await page.evaluate((pat) => {
+      function findAll(root: Document | ShadowRoot, tag: string): Element[] {
+        let results = Array.from(root.querySelectorAll(tag));
+        for (const child of root.querySelectorAll('*')) {
+          if (child.shadowRoot) {
+            results = results.concat(findAll(child.shadowRoot, tag));
+          }
+        }
+        return results;
+      }
+      const terminal = findAll(document, 'pages-component-terminal')[0] as any;
+      if (!terminal?._terminal) return false;
+      const buffer = terminal._terminal.buffer.active;
+      const lines: string[] = [];
+      for (let i = 0; i < buffer.length; i++) {
+        lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+      }
+      return lines.join('\n').includes(pat);
+    }, pattern);
+    if (found) return true;
+    await page.waitForTimeout(200);
+  }
+  return false;
+}
+
 export async function isTerminalConnected(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     function findAll(root: Document | ShadowRoot, tag: string): Element[] {
