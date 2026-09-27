@@ -1,6 +1,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import '../components/agent-status-badge';
+import '../components/lifecycle-progress.js';
+import type { OperationProgress, StepProgress } from '../components/lifecycle-progress.js';
 import { PairEntry } from '../components/terminal-pair-view';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 
@@ -47,6 +49,7 @@ export class TrellisRepoDetail extends LitElement {
   @state() private _error: string | null = null;
   @state() private _loading = false;
   @state() private _actionInProgress: string | null = null;
+  @state() private _operation: OperationProgress | null = null;
 
   private _lastLoaded = '';
   private _lastTerminalName = '';
@@ -133,6 +136,7 @@ export class TrellisRepoDetail extends LitElement {
     this._loadRepo();
     this._loadTerminal();
     this._subscribeEvents();
+    this._recoverOperation();
     this._unsubWorkspace = subscribeWorkspace(
       ['workspace:repos'],
       () => this._loadRepo()
@@ -199,8 +203,50 @@ export class TrellisRepoDetail extends LitElement {
   }
 
   private _subscribeEvents() {
-    this._eventSource = new EventSource('/api/push?topics=agent:state');
-    this._eventSource.onmessage = () => this._loadTerminal();
+    this._eventSource = new EventSource('/api/push?topics=agent:state,lifecycle:progress');
+    this._eventSource.onmessage = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.topic === 'lifecycle:progress') {
+          this._handleLifecycleEvent(data.payload ?? data);
+        } else {
+          this._loadTerminal();
+        }
+      } catch { this._loadTerminal(); }
+    };
+  }
+
+  private _handleLifecycleEvent(data: Record<string, unknown>) {
+    if (String(data.contextId) !== 'repo-' + this.repoName) return;
+    if (data.step) {
+      if (this._operation) {
+        this._operation = {
+          ...this._operation,
+          state: data.operationState as OperationProgress['state'],
+          steps: this._operation.steps.map(s =>
+            s.name === data.step
+              ? { ...s, state: data.state as StepProgress['state'], stdout: data.stdout as string | null, stderr: data.stderr as string | null }
+              : s
+          ),
+        };
+      }
+    } else {
+      if (this._operation) {
+        this._operation = {
+          ...this._operation,
+          state: data.operationState as OperationProgress['state'],
+          errorMessage: data.errorMessage as string | undefined,
+        };
+      }
+      if (data.operationState === 'COMPLETED' || data.operationState === 'FAILED') {
+        this._actionInProgress = null;
+        this._loadRepo();
+        this._loadTerminal();
+        if (data.operationState === 'COMPLETED') {
+          setTimeout(() => { this._operation = null; }, 10000);
+        }
+      }
+    }
   }
 
   override render() {
@@ -264,6 +310,12 @@ export class TrellisRepoDetail extends LitElement {
         <h2>${repo.name}</h2>
         <span class="badge badge-branch">${repo.branch}</span>
         <span class="spacer"></span>
+        ${repo.branch !== 'main' ? html`
+          <button class="action-btn" ?disabled=${!!this._actionInProgress}
+                  @click=${() => this._lifecycleAction('pause')}>pause</button>
+          <button class="action-btn danger" ?disabled=${!!this._actionInProgress}
+                  @click=${() => this._lifecycleAction('end')}>end</button>
+        ` : nothing}
       </div>
     `;
   }
@@ -277,6 +329,8 @@ export class TrellisRepoDetail extends LitElement {
           <h3>Path</h3>
           <div class="meta-item"><span class="meta-value">${repo.path}</span></div>
         </div>
+
+        <lifecycle-progress .operation=${this._operation}></lifecycle-progress>
 
         ${gh ? html`
           <div class="sidebar-section">
@@ -460,5 +514,42 @@ export class TrellisRepoDetail extends LitElement {
         this._agentState = agentState;
       }
     } catch { /* ignore */ }
+  }
+
+  private async _recoverOperation() {
+    if (!this.repoName) return;
+    try {
+      const res = await fetch(`/api/lifecycle/operations?context=repo-${this.repoName}`);
+      if (res.ok && res.status !== 204) {
+        const body = await res.json();
+        if (body && body.operationId) {
+          this._operation = body as OperationProgress;
+          if (body.state === 'RUNNING') {
+            this._actionInProgress = body.operationType;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  private async _lifecycleAction(name: string) {
+    this._actionInProgress = name;
+    try {
+      const res = await fetch(`/api/lifecycle/${name}/repo-${this.repoName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceRoot: this.workspaceRoot }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        this._error = body?.error ?? `${name} failed: HTTP ${res.status}`;
+        this._actionInProgress = null;
+        return;
+      }
+      this._operation = await res.json() as OperationProgress;
+    } catch (e) {
+      this._error = `${name} failed: ${e}`;
+      this._actionInProgress = null;
+    }
   }
 }
