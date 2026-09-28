@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { marked } from 'marked';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { fromRows, ColumnType, columnId } from '@casehubio/pages-data';
@@ -79,7 +80,10 @@ export class TrellisBacklogPanel extends LitElement {
   @state() private _loading = false;
   @state() private _filters: Partial<Record<FilterKey, FilterValue>> = {};
   @state() private _activeItem: BacklogItem | null = null;
+  @state() private _activeBody: string | null = null;
+  @state() private _bodyLoading = false;
   @state() private _repoDropdownOpen = false;
+  private _bodyCache = new Map<string, string>();
 
   private _refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _unsubWorkspace: (() => void) | null = null;
@@ -232,8 +236,56 @@ export class TrellisBacklogPanel extends LitElement {
   private _handleRowActivate = (e: CustomEvent) => {
     const key = e.detail.row.text(COL.key);
     const item = this._items.find(i => `${i.issueRepo}#${i.issueNumber}` === key);
-    this._activeItem = this._activeItem === item ? null : (item ?? null);
+    const toggled = this._activeItem === item ? null : (item ?? null);
+    this._activeItem = toggled;
+    this._activeBody = null;
+    if (toggled) {
+      this._fetchBody(toggled);
+      const filtered = this._filtered();
+      const idx = filtered.indexOf(toggled);
+      if (idx >= 0 && idx + 1 < filtered.length) {
+        this._prefetchBody(filtered[idx + 1]);
+      }
+    }
   };
+
+  private async _fetchBody(item: BacklogItem) {
+    const cacheKey = `${item.issueRepo}#${item.issueNumber}`;
+    const cached = this._bodyCache.get(cacheKey);
+    if (cached !== undefined) {
+      this._activeBody = cached;
+      return;
+    }
+    this._bodyLoading = true;
+    try {
+      const res = await fetch(`/api/backlog/body?repo=${encodeURIComponent(item.issueRepo)}&number=${item.issueNumber}`);
+      if (!res.ok) { this._activeBody = null; return; }
+      const data = await res.json();
+      const body = data.body ?? '';
+      this._bodyCache.set(cacheKey, body);
+      if (this._bodyCache.size > 10) {
+        const oldest = this._bodyCache.keys().next().value!;
+        this._bodyCache.delete(oldest);
+      }
+      if (this._activeItem === item) this._activeBody = body;
+    } catch { this._activeBody = null; }
+    finally { this._bodyLoading = false; }
+  }
+
+  private async _prefetchBody(item: BacklogItem) {
+    const cacheKey = `${item.issueRepo}#${item.issueNumber}`;
+    if (this._bodyCache.has(cacheKey)) return;
+    try {
+      const res = await fetch(`/api/backlog/body?repo=${encodeURIComponent(item.issueRepo)}&number=${item.issueNumber}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      this._bodyCache.set(cacheKey, data.body ?? '');
+      if (this._bodyCache.size > 10) {
+        const oldest = this._bodyCache.keys().next().value!;
+        this._bodyCache.delete(oldest);
+      }
+    } catch { /* prefetch failure is silent */ }
+  }
 
   private _formatAge(ms: number): string {
     if (ms < 60_000) return 'just now';
@@ -314,6 +366,13 @@ export class TrellisBacklogPanel extends LitElement {
     .sidebar-value { font-size: 0.85rem; color: #ccc; margin-top: 0.15rem; }
     .sidebar-note { font-size: 0.8rem; color: #ccc; line-height: 1.5; white-space: pre-wrap; margin-top: 0.5rem; }
     .sidebar-placeholder { color: #555; font-size: 0.8rem; font-style: italic; }
+    .sidebar-body { font-size: 0.8rem; color: #ccc; line-height: 1.5; margin-top: 0.25rem; overflow-wrap: break-word; }
+    .sidebar-body h1, .sidebar-body h2, .sidebar-body h3 { font-size: 0.85rem; color: #aaa; margin: 0.5rem 0 0.25rem; }
+    .sidebar-body p { margin: 0.25rem 0; }
+    .sidebar-body ul, .sidebar-body ol { padding-left: 1.2rem; margin: 0.25rem 0; }
+    .sidebar-body code { font-size: 0.75rem; background: #333; padding: 1px 4px; border-radius: 3px; }
+    .sidebar-body pre { background: #2a2a2a; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; }
+    .sidebar-body a { color: #60a5fa; }
   `;
 
   override render() {
@@ -408,6 +467,17 @@ export class TrellisBacklogPanel extends LitElement {
           <div class="sidebar-label">Trajectory</div>
           <div class="sidebar-note">${item.trajectoryNote}</div>
           <div style="font-size:0.7rem;color:#555;margin-top:0.25rem">${item.trajectoryAt}</div>
+        </div>
+      ` : nothing}
+      ${this._bodyLoading ? html`
+        <div class="sidebar-field">
+          <div class="sidebar-label">Body</div>
+          <div class="sidebar-value" style="color:#555;font-style:italic">Loading...</div>
+        </div>
+      ` : this._activeBody ? html`
+        <div class="sidebar-field">
+          <div class="sidebar-label">Body</div>
+          <div class="sidebar-body" .innerHTML=${marked.parse(this._activeBody, { async: false }) as string}></div>
         </div>
       ` : nothing}
       <div class="sidebar-field">
