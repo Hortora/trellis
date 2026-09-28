@@ -78,6 +78,8 @@ export class TrellisRepoDetail extends LitElement {
 
   private _lastLoaded = '';
   private _lastTerminalName = '';
+  private _navigationVersion = 0;
+  private _fetchController: AbortController | null = null;
   private _eventSource: EventSource | null = null;
   private _unsubWorkspace: (() => void) | null = null;
 
