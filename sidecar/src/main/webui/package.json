@@ -41,7 +41,8 @@
     "@casehubio/pages-component-terminal": "portal:./.casehub-packages/packages/pages-component-terminal",
     "@casehubio/pages-filter-bar": "portal:./.casehub-packages/packages/pages-filter-bar",
     "@casehubio/pages-schema": "portal:./.casehub-packages/packages/pages-schema",
-    "@casehubio/pages-property-palette": "portal:./.casehub-packages/packages/pages-property-palette"
+    "@casehubio/pages-property-palette": "portal:./.casehub-packages/packages/pages-property-palette",
+    "@casehubio/yaml-core": "portal:./.casehub-packages/packages/yaml-core"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
