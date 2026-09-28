@@ -319,4 +319,20 @@ class WorklogServiceTest {
         assertEquals(0, data.size());
     }
 
+
+    @Test
+    void issueBodyReturnsBodyForExistingIssue() throws Exception {
+        try (var conn = ds.getConnection()) {
+            conn.createStatement().execute(
+                    "UPDATE github_issue_cache SET body = '## Summary\nFix the thing.' WHERE issue_number = 10 AND issue_repo = 'Test/repo'");
+        }
+        var body = service.issueBody("Test/repo", 10);
+        assertEquals("## Summary\nFix the thing.", body);
+    }
+
+    @Test
+    void issueBodyReturnsNullForMissingIssue() {
+        var body = service.issueBody("Test/repo", 999);
+        assertNull(body);
+    }
 }

@@ -5,7 +5,10 @@ import io.hortora.trellis.scanner.WorkspaceRepos;
 import io.hortora.trellis.worklog.BacklogEntry;
 import io.hortora.trellis.worklog.WorklogService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 import java.util.List;
@@ -39,4 +42,19 @@ public class BacklogResource {
         }
         return worklogService.backlogEntries(null);
     }
+
+    @GET
+    @Path("/body")
+    public jakarta.ws.rs.core.Response body(@QueryParam("repo") String repo,
+                                            @QueryParam("number") int number) {
+        if (repo == null || repo.isBlank() || number <= 0) {
+            return jakarta.ws.rs.core.Response.status(400).build();
+        }
+        var body = worklogService.issueBody(repo, number);
+        if (body == null) {
+            return jakarta.ws.rs.core.Response.status(404).build();
+        }
+        return jakarta.ws.rs.core.Response.ok(java.util.Map.of("body", body)).build();
+    }
+
 }

@@ -279,6 +279,23 @@ public class WorklogService {
         return results;
     }
 
+    public String issueBody(String repo, int issueNumber) {
+        if (!dbAvailable) {return null;}
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement(
+                     "SELECT body FROM github_issue_cache WHERE issue_repo=? AND issue_number=?")) {
+            stmt.setString(1, repo);
+            stmt.setInt(2, issueNumber);
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {return rs.getString("body");}
+            }
+        } catch (java.sql.SQLException e) {
+            LOG.warning("worklog query failed (issueBody): " + e.getMessage());
+        }
+        return null;
+    }
+
+
     public List<io.hortora.trellis.dependencies.IssueDependencyData> issueDependencyData(List<String> repos) {
         if (!dbAvailable || repos.isEmpty()) {return List.of();}
         checkFreshness();
