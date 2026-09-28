@@ -84,6 +84,8 @@ export class TrellisSlotDetail extends LitElement {
   @state() private _evictionCandidates: Set<string> = new Set();
   @state() private _totalAgentMemoryMb = 0;
   @state() private _operation: OperationProgress | null = null;
+  private _navigationVersion = 0;
+  private _fetchController: AbortController | null = null;
   private _eventSource: EventSource | null = null;
   private _unsubWorkspace: (() => void) | null = null;
 
@@ -181,6 +183,7 @@ export class TrellisSlotDetail extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this._lastSlotNumber = this.slotNumber;
+    this._fetchController = new AbortController();
     this._loadSlot();
     this._loadTerminals();
     this._subscribeEvents();
@@ -194,7 +197,13 @@ export class TrellisSlotDetail extends LitElement {
     if (changed.has('slotNumber') && this.slotNumber !== this._lastSlotNumber) {
       this._lastSlotNumber = this.slotNumber;
       this._slot = null;
+      this._snapshots = [];
+      this._repoInfos = [];
       this._error = null;
+      this._operation = null;
+      this._fetchController?.abort();
+      this._fetchController = new AbortController();
+      this._navigationVersion++;
       this._loadSlot();
       this._loadTerminals();
     }
@@ -202,6 +211,7 @@ export class TrellisSlotDetail extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this._fetchController?.abort();
     this._eventSource?.close();
     this._unsubWorkspace?.();
   }
@@ -498,19 +508,27 @@ export class TrellisSlotDetail extends LitElement {
 
   private async _loadSlot() {
     if (!this.workspaceRoot) return;
+    const version = this._navigationVersion;
+    const signal = this._fetchController?.signal;
     try {
-      const res = await fetch(`/api/workspace?root=${encodeURIComponent(this.workspaceRoot)}`);
+      const res = await fetch(`/api/workspace?root=${encodeURIComponent(this.workspaceRoot)}`, { signal });
+      if (version !== this._navigationVersion) return;
       if (!res.ok) { this._error = `Failed to load workspace: HTTP ${res.status}`; return; }
       const model = await res.json();
+      if (version !== this._navigationVersion) return;
       this._slot = model.slots.find((s: SlotInfo) => s.number === this.slotNumber) ?? null;
       if (!this._slot) { this._error = `Slot ${this.slotNumber} not found`; return; }
       this._repoInfos = (model.repos ?? []).filter((r: RepoInfo) =>
         this._slot!.repos.includes(r.name));
     } catch (e) {
+      if (version !== this._navigationVersion) return;
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       this._error = `Failed to load slot: ${e}`;
     }
+    if (version !== this._navigationVersion) return;
     try {
-      const opRes = await fetch(`/api/lifecycle/operations?context=slot-${this.slotNumber}`);
+      const opRes = await fetch(`/api/lifecycle/operations?context=slot-${this.slotNumber}`, { signal });
+      if (version !== this._navigationVersion) return;
       if (opRes.ok && opRes.status !== 204) {
         const body = await opRes.json();
         if (body && body.operationId) {
@@ -610,19 +628,21 @@ export class TrellisSlotDetail extends LitElement {
   }
 
   private async _loadTerminals() {
+    const version = this._navigationVersion;
+    const signal = this._fetchController?.signal;
     try {
       const params = new URLSearchParams();
       params.set('slot', String(this.slotNumber));
-      const res = await fetch(`/api/terminals?${params}`);
+      const res = await fetch(`/api/terminals?${params}`, { signal });
+      if (version !== this._navigationVersion) return;
       if (res.ok) {
         const next: AgentSnapshot[] = await res.json();
-        const prevNames = this._snapshots.map(s => s.terminalName).join(',');
-        const nextNames = next.map(s => s.terminalName).join(',');
-        if (prevNames !== nextNames) {
-          this._snapshots = next;
-        }
+        if (version !== this._navigationVersion) return;
+        this._snapshots = next;
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+    }
   }
 
   private async _end() {
