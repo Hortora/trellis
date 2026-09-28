@@ -49,26 +49,79 @@ public class WorkspaceScanner {
         var repos = new ArrayList<RepoInfo>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(root)) {
             for (Path entry : stream) {
-                if (!Files.isDirectory(entry)) continue;
+                if (!Files.isDirectory(entry)) {continue;}
                 String name = entry.getFileName().toString();
-                if ("worktrees".equals(name) || "slots".equals(name) || name.startsWith(".")) continue;
+                if ("worktrees".equals(name) || "slots".equals(name) || name.startsWith(".")) {continue;}
 
                 Path gitDir = entry.resolve(".git");
-                if (!Files.isDirectory(gitDir)) continue;
+                if (!Files.isDirectory(gitDir)) {continue;}
                 if (Files.exists(gitDir.resolve("index.lock"))) {
                     LOG.warnf("Skipping repo %s — index.lock present", name);
                     continue;
                 }
 
-                String branch = readBranch(gitDir);
+                String branch    = readBranch(gitDir);
                 String remoteUrl = readRemoteUrl(gitDir);
-                repos.add(new RepoInfo(name, entry, branch, remoteUrl));
+
+                var planMeta = parseRepoPlan(entry);
+                if (planMeta != null) {
+                    repos.add(new RepoInfo(name, entry, branch, remoteUrl,
+                                           planMeta.issue(), planMeta.covers(), planMeta.workState(), planMeta.planProgress()));
+                } else {
+                    repos.add(new RepoInfo(name, entry, branch, remoteUrl));
+                }
             }
         } catch (IOException e) {
             LOG.warnf(e, "Failed to scan repos under %s", root);
         }
         return repos;
     }
+
+    private RepoInfo parseRepoPlan(Path repoDir) {
+        Path planFile = repoDir.resolve(".plan");
+        if (!Files.isRegularFile(planFile)) {return null;}
+        try {
+            var     lines     = Files.readAllLines(planFile);
+            String  issue     = null;
+            String  issueRepo = null;
+            var     covers    = new ArrayList<Integer>();
+            String  workState = null;
+            boolean inState   = false;
+
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.equals("## State")) {
+                    inState = true;
+                    continue;
+                }
+                if (trimmed.startsWith("## ") && inState) {break;}
+                if (!inState) {continue;}
+
+                if (trimmed.startsWith("state:")) {
+                    workState = trimmed.substring("state:".length()).trim();
+                } else if (trimmed.startsWith("issue-repo:")) {
+                    issueRepo = trimmed.substring("issue-repo:".length()).trim();
+                } else if (trimmed.startsWith("covers:")) {
+                    for (String n : trimmed.substring("covers:".length()).trim().split(",")) {
+                        try {covers.add(Integer.parseInt(n.trim()));} catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+
+            PlanProgress plan = parsePlanFile(planFile);
+
+            if (issueRepo != null && !covers.isEmpty()) {
+                issue = issueRepo + "#" + covers.getFirst();
+            }
+
+            if (issue == null && plan == null) {return null;}
+            return new RepoInfo(null, null, null, null, issue, List.copyOf(covers), workState, plan);
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to parse repo plan: %s", planFile);
+            return null;
+        }
+    }
+
 
     List<SlotInfo> scanSlots(Path root) {
         var slots = new ArrayList<SlotInfo>();

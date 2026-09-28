@@ -73,6 +73,7 @@ npm start                                                  # launch app (require
 - `GET /api/worklog/slots` — slot lifecycle state; optional `?familyRoot=` filter
 - `WorklogService` — single JDBC reader for worklog.db (read-only) + `.plan` file parser. Schema version check on init, file mtime freshness detection for `GenerationCounter`, 5s summary cache
 - `WorklogModelProvider` — `ModelProvider` SPI implementation; domain `worklog`; subpaths: `events`, `work-items`, `slots`, `backlog`
+- `RepoInfo` extended with `issue`, `covers`, `workState`, `planProgress` — workspace scanner parses `.plan` files during `scanRepos()` to provide plan/issue data for standalone repos (not just slots). Repo detail sidebar shows status, issue links, plan progress, and covers badges — same information density as slot detail
 - Protocol panel (`trellis-protocol-view`) — accordion repo list, garden-style entry rows, split-pane layout, garden search integration for adding entries
 - Backlog panel (`trellis-backlog-panel`) — enriched issue backlog with `pages-data-table`, client-side filtering by strategic classification, cache age indicator, trajectory detail sidebar
 - `GET/PUT/DELETE /api/layouts/{key}?root=...` — key-based layout persistence via `LayoutResource`. File-based storage under `.trellis/layouts/{key}.json` in workspace root. Keys: `workbench` (dock bar + content area state), `workspace-frames` (Dockview frame positions), `workspace-groups` (saved tab collections)

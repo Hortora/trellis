@@ -6,11 +6,36 @@ import type { OperationProgress, StepProgress } from '../components/lifecycle-pr
 import { PairEntry } from '../components/terminal-pair-view';
 import { subscribeWorkspace } from '../services/workspace-sse.js';
 
+interface PlanItem {
+  ref: string;
+  title: string;
+  done: boolean;
+  active: boolean;
+  group?: boolean;
+  children?: PlanItem[];
+}
+
+interface PlanBatch {
+  name: string | null;
+  items: PlanItem[];
+}
+
+interface PlanProgress {
+  batches: PlanBatch[];
+  activeIssue: string | null;
+  completed: number;
+  total: number;
+}
+
 interface RepoData {
   name: string;
   path: string;
   branch: string;
   remoteUrl: string | null;
+  issue: string | null;
+  covers: number[];
+  workState: string | null;
+  planProgress: PlanProgress | null;
 }
 
 interface AgentProcess {
@@ -122,6 +147,30 @@ export class TrellisRepoDetail extends LitElement {
 
     .remote-link { color: #60a5fa; font-size: 0.8rem; text-decoration: none; }
     .remote-link:hover { text-decoration: underline; }
+
+    .plan-batch { margin-bottom: 0.75rem; }
+    .plan-batch-header {
+      font-size: 0.7rem; color: #777; text-transform: uppercase;
+      letter-spacing: 0.03em; margin-bottom: 0.3rem; margin-top: 0.5rem;
+    }
+    .plan-item {
+      display: flex; align-items: baseline; gap: 0.4rem;
+      font-size: 0.8rem; padding: 0.1rem 0;
+    }
+    .plan-item-done { color: #666; }
+    .plan-item-active { color: #e5e5e5; }
+    .plan-item-pending { color: #555; }
+    .plan-icon-done { color: #86efac; }
+    .plan-icon-active { color: #93c5fd; }
+    .plan-icon-pending { color: #555; }
+    .plan-ref { font-family: monospace; font-size: 0.7rem; flex-shrink: 0; }
+    .plan-link { color: #60a5fa; text-decoration: none; cursor: pointer; }
+    .plan-link:hover { text-decoration: underline; }
+    .plan-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plan-summary {
+      font-size: 0.75rem; color: #888; padding-top: 0.5rem;
+      margin-top: 0.5rem; border-top: 1px solid #333;
+    }
 
     .error { color: #f87171; padding: 1rem; }
     .loading { color: #666; padding: 2rem; text-align: center; }
@@ -341,6 +390,17 @@ export class TrellisRepoDetail extends LitElement {
           <div class="meta-item"><span class="meta-value">${repo.path}</span></div>
         </div>
 
+        ${repo.workState ? html`
+          <div class="sidebar-section">
+            <h3>Status</h3>
+            <span class="badge badge-branch">${repo.workState}</span>
+          </div>
+        ` : nothing}
+
+        ${repo.issue ? this._renderIssueSection(repo) : nothing}
+
+        ${this._renderPlan()}
+
         <lifecycle-progress .operation=${this._operation}></lifecycle-progress>
 
         ${gh ? html`
@@ -372,6 +432,89 @@ export class TrellisRepoDetail extends LitElement {
         ` : nothing}
       </div>
     `;
+  }
+
+  private _renderIssueSection(repo: RepoData) {
+    const issueHref = repo.issue ? this._issueUrl(repo.issue) : null;
+    return html`
+      <div class="sidebar-section">
+        <h3>Issue</h3>
+        <div class="meta-item">
+          ${issueHref
+            ? html`<a class="remote-link" href=${issueHref} target="_blank">${repo.issue}</a>`
+            : html`<span class="meta-value">${repo.issue}</span>`}
+        </div>
+        ${repo.covers && repo.covers.length > 1 ? html`
+          <div style="margin-top:0.4rem">
+            ${repo.covers.map(n => {
+              const isCurrent = repo.issue?.endsWith('#' + n);
+              return html`
+                <span class="badge" style="margin:0.1rem 0.15rem;${isCurrent ? 'background:#1e3a5f;color:#93c5fd;font-weight:600' : 'background:#333;color:#888'}">
+                  #${n}${isCurrent ? ' ●' : ''}
+                </span>
+              `;
+            })}
+          </div>
+        ` : nothing}
+      </div>
+    `;
+  }
+
+  private _renderPlan() {
+    const plan = this._repo?.planProgress;
+    if (!plan) return nothing;
+    return html`
+      <div class="sidebar-section">
+        <h3>Plan</h3>
+        ${plan.batches.map(batch => html`
+          <div class="plan-batch">
+            ${batch.name ? html`<div class="plan-batch-header">${batch.name}</div>` : nothing}
+            ${this._renderPlanItems(batch.items)}
+          </div>
+        `)}
+        <div class="plan-summary">${plan.completed}/${plan.total} done</div>
+      </div>
+    `;
+  }
+
+  private _renderPlanItems(items: PlanItem[]): unknown {
+    return items.map(item => {
+      const url = this._issueUrl(item.ref);
+      const label = this._shortRef(item.ref);
+      const hasChildren = item.children && item.children.length > 0;
+      return html`
+        <div class="plan-item ${item.done ? 'plan-item-done' : item.active ? 'plan-item-active' : 'plan-item-pending'}">
+          <span class="${item.done ? 'plan-icon-done' : item.active ? 'plan-icon-active' : 'plan-icon-pending'}">
+            ${item.done ? '✓' : item.active ? '●' : '○'}
+          </span>
+          ${url
+            ? html`<a class="plan-ref plan-link" href=${url} target="_blank">${label}</a>`
+            : html`<span class="plan-ref">${label}</span>`}
+          <span class="plan-title">${item.title}</span>
+        </div>
+        ${hasChildren ? this._renderPlanItems(item.children!) : nothing}
+      `;
+    });
+  }
+
+  private _shortRef(ref: string): string {
+    const parts = ref.split('/');
+    return parts.length > 1 ? parts[parts.length - 1] : ref;
+  }
+
+  private _issueUrl(ref: string): string | null {
+    const m = ref.match(/^(?:([^/]+)\/)?([^#]+)#(\d+)$/);
+    if (!m) return null;
+    let owner = m[1];
+    const repo = m[2];
+    const num = m[3];
+    if (!owner) {
+      const issue = this._repo?.issue ?? '';
+      const ownerMatch = issue.match(/^([^/]+)\//);
+      owner = ownerMatch ? ownerMatch[1] : '';
+    }
+    if (!owner) return null;
+    return `https://github.com/${owner}/${repo}/issues/${num}`;
   }
 
   private _renderAgentButtons() {
