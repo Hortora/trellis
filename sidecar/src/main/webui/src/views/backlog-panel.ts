@@ -20,6 +20,7 @@ export interface BacklogItem {
   enrichedAt: string | null;
   trajectoryNote: string | null;
   trajectoryAt: string | null;
+  parentKey: string | null;
 }
 
 export type FilterKey = 'repo' | 'strategicRole' | 'readiness' | 'decay' | 'blastRadius' | 'cohesion';
@@ -27,6 +28,7 @@ export type FilterValue = string | Set<string>;
 
 const COL = {
   key: columnId('key'),
+  parent: columnId('parent'),
   number: columnId('number'),
   repo: columnId('repo'),
   title: columnId('title'),
@@ -180,6 +182,7 @@ export class TrellisBacklogPanel extends LitElement {
   private _buildDataSet(): TypedDataSet {
     return fromRows(this._filtered(), [
       { id: COL.key, type: ColumnType.TEXT, getValue: i => `${i.issueRepo}#${i.issueNumber}` },
+      { id: COL.parent, type: ColumnType.TEXT, getValue: i => i.parentKey ?? '' },
       { id: COL.number, type: ColumnType.NUMBER, getValue: i => i.issueNumber },
       { id: COL.repo, type: ColumnType.TEXT, getValue: i => i.issueRepo },
       { id: COL.title, type: ColumnType.TEXT, getValue: i => i.title },
@@ -353,7 +356,8 @@ export class TrellisBacklogPanel extends LitElement {
               .sortable=${true}
               .clientSort=${true}
               .getRowKey=${this._getRowKey}
-              .hiddenColumns=${[COL.key] as any}
+              .hiddenColumns=${[COL.key, COL.parent] as any}
+              .expandable=${{ idColumn: COL.key, parentColumn: COL.parent, defaultExpanded: 1 }}
               .emptyMessage=${'No backlog data.'}
               @row-activate=${this._handleRowActivate}
             ></pages-data-table>

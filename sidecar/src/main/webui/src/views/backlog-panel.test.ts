@@ -3,9 +3,9 @@ import { applyFilters, cacheAge } from './backlog-panel';
 import type { BacklogItem } from './backlog-panel';
 
 const ITEMS: BacklogItem[] = [
-  { issueNumber: 1, issueRepo: 'Org/repo', title: 'Issue 1', labels: ['bug'], cachedAt: '2026-08-09T10:00:00Z', strategicRole: 'quick-win', readiness: 'ready', decay: 'compounding', blastRadius: 'isolated', cohesion: 'infra', enrichedAt: '2026-08-09T10:00:00Z', trajectoryNote: 'Latest note', trajectoryAt: '2026-08-09T10:00:00Z' },
-  { issueNumber: 2, issueRepo: 'Org/repo', title: 'Issue 2', labels: [], cachedAt: '2026-08-09T10:00:00Z', strategicRole: null, readiness: null, decay: null, blastRadius: null, cohesion: null, enrichedAt: null, trajectoryNote: null, trajectoryAt: null },
-  { issueNumber: 3, issueRepo: 'Org/other', title: 'Other repo', labels: [], cachedAt: '2026-08-09T10:00:00Z', strategicRole: 'load-bearing', readiness: 'blocked', decay: 'stable', blastRadius: 'cross-cutting', cohesion: 'core', enrichedAt: '2026-08-09T10:00:00Z', trajectoryNote: null, trajectoryAt: null },
+  { issueNumber: 1, issueRepo: 'Org/repo', title: 'Issue 1', labels: ['bug'], cachedAt: '2026-08-09T10:00:00Z', strategicRole: 'quick-win', readiness: 'ready', decay: 'compounding', blastRadius: 'isolated', cohesion: 'infra', enrichedAt: '2026-08-09T10:00:00Z', trajectoryNote: 'Latest note', trajectoryAt: '2026-08-09T10:00:00Z', parentKey: null },
+  { issueNumber: 2, issueRepo: 'Org/repo', title: 'Issue 2', labels: [], cachedAt: '2026-08-09T10:00:00Z', strategicRole: null, readiness: null, decay: null, blastRadius: null, cohesion: null, enrichedAt: null, trajectoryNote: null, trajectoryAt: null, parentKey: null },
+  { issueNumber: 3, issueRepo: 'Org/other', title: 'Other repo', labels: [], cachedAt: '2026-08-09T10:00:00Z', strategicRole: 'load-bearing', readiness: 'blocked', decay: 'stable', blastRadius: 'cross-cutting', cohesion: 'core', enrichedAt: '2026-08-09T10:00:00Z', trajectoryNote: null, trajectoryAt: null, parentKey: null },
 ];
 
 describe('backlog filter logic', () => {
@@ -44,6 +44,17 @@ describe('backlog filter logic', () => {
   it('null fields do not match filter values', () => {
     const result = applyFilters(ITEMS, { strategicRole: 'quick-win' });
     expect(result.find(i => i.issueNumber === 2)).toBeUndefined();
+  });
+
+  it('preserves parentKey through filter', () => {
+    const items: BacklogItem[] = [
+      { issueNumber: 2, issueRepo: 'Org/repo', title: 'Epic', labels: [], cachedAt: '2026-09-28T10:00:00Z', strategicRole: null, readiness: null, decay: null, blastRadius: null, cohesion: null, enrichedAt: null, trajectoryNote: null, trajectoryAt: null, parentKey: null },
+      { issueNumber: 5, issueRepo: 'Org/repo', title: 'Child', labels: [], cachedAt: '2026-09-28T10:00:00Z', strategicRole: null, readiness: null, decay: null, blastRadius: null, cohesion: null, enrichedAt: null, trajectoryNote: null, trajectoryAt: null, parentKey: 'Org/repo#2' },
+    ];
+    const result = applyFilters(items, {});
+    expect(result).toHaveLength(2);
+    expect(result.find(i => i.issueNumber === 5)?.parentKey).toBe('Org/repo#2');
+    expect(result.find(i => i.issueNumber === 2)?.parentKey).toBeNull();
   });
 });
 
