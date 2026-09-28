@@ -13,7 +13,7 @@ class EnrichmentAdapterTest {
     @Test
     void extractsBlockerFromLabel() {
         var entry = new BacklogEntry(19, "Hortora/trellis", "Work Intelligence",
-                List.of("blocked by #11"), null, null, null, null, null, null, null, null, null);
+                List.of("blocked by #11"), null, null, null, null, null, null, null, null, null, null);
 
         var blockers = EnrichmentAdapter.extractBlockers(entry);
 
@@ -25,7 +25,7 @@ class EnrichmentAdapterTest {
     @Test
     void extractsMultipleBlockersFromSingleLabel() {
         var entry = new BacklogEntry(19, "Hortora/trellis", "Work Intelligence",
-                List.of("blocked by #11 and #22"), null, null, null, null, null, null, null, null, null);
+                List.of("blocked by #11 and #22"), null, null, null, null, null, null, null, null, null, null);
 
         var blockers = EnrichmentAdapter.extractBlockers(entry);
 
@@ -37,7 +37,7 @@ class EnrichmentAdapterTest {
     @Test
     void returnsEmptyForNonBlockedLabels() {
         var entry = new BacklogEntry(19, "Hortora/trellis", "Work Intelligence",
-                List.of("enhancement", "priority:high"), null, null, null, null, null, null, null, null, null);
+                List.of("enhancement", "priority:high"), null, null, null, null, null, null, null, null, null, null);
 
         var blockers = EnrichmentAdapter.extractBlockers(entry);
 
@@ -47,7 +47,7 @@ class EnrichmentAdapterTest {
     @Test
     void handlesNullLabels() {
         var entry = new BacklogEntry(19, "Hortora/trellis", "Work Intelligence",
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
 
         var blockers = EnrichmentAdapter.extractBlockers(entry);
 

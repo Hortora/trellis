@@ -240,26 +240,27 @@ public class WorklogService {
     }
 
     public List<BacklogEntry> backlogEntries(String repo) {
-        if (!dbAvailable) return List.of();
+        if (!dbAvailable) {return List.of();}
         checkFreshness();
         var baseSql = """
-            SELECT c.issue_number, c.issue_repo, c.title, c.labels, c.cached_at,
-                   e.strategic_role, e.readiness, e.decay, e.blast_radius, e.cohesion, e.updated_at,
-                   t.note AS trajectory_note, t.created_at AS trajectory_at
-            FROM github_issue_cache c
-            LEFT JOIN issue_enrichment e
-              ON c.issue_number = e.issue_number AND c.issue_repo = e.issue_repo
-            LEFT JOIN trajectory_notes t
-              ON t.id = (
-                SELECT id FROM trajectory_notes t2
-                WHERE t2.issue_number = c.issue_number AND t2.issue_repo = c.issue_repo
-                ORDER BY t2.id DESC LIMIT 1
-              )
-            WHERE c.state = 'OPEN'
-            """;
+                      SELECT c.issue_number, c.issue_repo, c.title, c.labels, c.cached_at,
+                             e.strategic_role, e.readiness, e.decay, e.blast_radius, e.cohesion, e.updated_at,
+                             t.note AS trajectory_note, t.created_at AS trajectory_at,
+                             c.parent_issue
+                      FROM github_issue_cache c
+                      LEFT JOIN issue_enrichment e
+                        ON c.issue_number = e.issue_number AND c.issue_repo = e.issue_repo
+                      LEFT JOIN trajectory_notes t
+                        ON t.id = (
+                          SELECT id FROM trajectory_notes t2
+                          WHERE t2.issue_number = c.issue_number AND t2.issue_repo = c.issue_repo
+                          ORDER BY t2.id DESC LIMIT 1
+                        )
+                      WHERE c.state = 'OPEN'
+                      """;
         var sql = repo != null && !repo.isBlank()
-                ? baseSql + " AND c.issue_repo = ? ORDER BY c.issue_repo, c.issue_number"
-                : baseSql + " ORDER BY c.issue_repo, c.issue_number";
+                  ? baseSql + " AND c.issue_repo = ? ORDER BY c.issue_repo, c.issue_number"
+                  : baseSql + " ORDER BY c.issue_repo, c.issue_number";
         var results = new ArrayList<BacklogEntry>();
         try (var conn = dataSource.getConnection();
              var stmt = conn.prepareStatement(sql)) {
@@ -381,7 +382,7 @@ public class WorklogService {
                 rs.getString("readiness"), rs.getString("decay"),
                 rs.getString("blast_radius"), rs.getString("cohesion"),
                 rs.getString("updated_at"), rs.getString("trajectory_note"),
-                rs.getString("trajectory_at"));
+                rs.getString("trajectory_at"), rs.getString("parent_issue"));
     }
 
     private List<String> parseLabels(String json) {

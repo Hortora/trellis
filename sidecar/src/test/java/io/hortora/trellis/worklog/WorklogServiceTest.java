@@ -90,7 +90,7 @@ class WorklogServiceTest {
             CREATE TABLE IF NOT EXISTS github_issue_cache (
                 issue_number INTEGER NOT NULL, issue_repo TEXT NOT NULL,
                 title TEXT, state TEXT, labels TEXT, body TEXT,
-                cached_at TEXT NOT NULL,
+                parent_issue TEXT, cached_at TEXT NOT NULL,
                 PRIMARY KEY (issue_number, issue_repo))""");
         conn.createStatement().execute("PRAGMA user_version = 2");
     }
