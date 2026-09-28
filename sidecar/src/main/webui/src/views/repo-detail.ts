@@ -154,27 +154,38 @@ export class TrellisRepoDetail extends LitElement {
       const key = `${this.workspaceRoot}:${this.repoName}`;
       if (key !== this._lastLoaded) {
         this._lastLoaded = key;
+        this._lastTerminalName = '';
         this._loadRepo();
         this._loadTerminal();
       }
     }
-    if (changed.has('_terminalName') && this._terminalName &&
-        this._terminalName !== this._lastTerminalName) {
-      this.updateComplete.then(() => {
-        const el = this.renderRoot.querySelector('#repo-terminal') as any;
-        if (el) {
-          this._lastTerminalName = this._terminalName;
-          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-          el.configure({
-            wsUrl: `${proto}//${location.host}/ws/terminal/${this._terminalName}/{cols}/{rows}`,
-            theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad' },
-            fontSize: 13,
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-          });
-          setTimeout(() => this._focusTerminal(), 500);
-        }
-      });
+    if (this._needsTerminalConfigure(changed)) {
+      this._configureTerminalElement();
     }
+  }
+
+  private _needsTerminalConfigure(changed: Map<PropertyKey, unknown>): boolean {
+    if (!this._terminalName || this._terminalName === this._lastTerminalName) return false;
+    if (changed.has('_terminalName')) return true;
+    if (changed.has('_loading') && !this._loading) return true;
+    return false;
+  }
+
+  private _configureTerminalElement() {
+    this.updateComplete.then(() => {
+      const el = this.renderRoot.querySelector('#repo-terminal') as any;
+      if (el) {
+        this._lastTerminalName = this._terminalName;
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        el.configure({
+          wsUrl: `${proto}//${location.host}/ws/terminal/${this._terminalName}/{cols}/{rows}`,
+          theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad' },
+          fontSize: 13,
+          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+        });
+        setTimeout(() => this._focusTerminal(), 500);
+      }
+    });
   }
 
   static override shadowRootOptions = { ...LitElement.shadowRootOptions, delegatesFocus: true };
