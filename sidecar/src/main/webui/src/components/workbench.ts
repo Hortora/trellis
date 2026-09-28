@@ -1,6 +1,5 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import { dockWorkbench } from '@casehubio/pages-ui/dist/dsl/builders.js';
 import { renderComponent } from '@casehubio/pages-component';
 import type { LayoutState } from '@casehubio/pages-component';
 import { createZoneLayoutEngine } from '@casehubio/pages-runtime';
@@ -112,10 +111,10 @@ export class TrellisWorkbench extends LitElement {
       left: DOCK_PANELS,
       storageKey: LAYOUT_STORE_KEY,
     };
-    const config = dockWorkbench(dockConfig);
     this._engine = createZoneLayoutEngine(dockConfig, savedState?.zones);
+    const tree = this._engine.buildTree();
 
-    renderComponent(root as HTMLElement, config);
+    renderComponent(root as HTMLElement, tree);
 
     const siteRoot = root as HTMLElement;
     const dockBars = siteRoot.querySelectorAll<HTMLElement>('[data-component-type="dock-bar"]');
