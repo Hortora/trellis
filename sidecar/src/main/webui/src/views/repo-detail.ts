@@ -182,6 +182,7 @@ export class TrellisRepoDetail extends LitElement {
     link.rel = 'stylesheet';
     link.href = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.min.css';
     this.renderRoot.prepend(link);
+    this._fetchController = new AbortController();
     this._loadRepo();
     this._loadTerminal();
     this._subscribeEvents();
@@ -194,6 +195,7 @@ export class TrellisRepoDetail extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this._fetchController?.abort();
     this._eventSource?.close();
     this._unsubWorkspace?.();
   }
@@ -204,6 +206,12 @@ export class TrellisRepoDetail extends LitElement {
       if (key !== this._lastLoaded) {
         this._lastLoaded = key;
         this._lastTerminalName = '';
+        this._terminalName = '';
+        this._snapshots = [];
+        this._agentState = null;
+        this._fetchController?.abort();
+        this._fetchController = new AbortController();
+        this._navigationVersion++;
         this._loadRepo();
         this._loadTerminal();
       }
@@ -622,11 +630,14 @@ export class TrellisRepoDetail extends LitElement {
   }
 
   private async _loadRepo() {
+    const version = this._navigationVersion;
+    const signal = this._fetchController?.signal;
     this._loading = true;
     this._error = null;
     try {
       const params = new URLSearchParams({ root: this.workspaceRoot, repo: this.repoName });
-      const res = await fetch(`/api/workspace/repo?${params}`);
+      const res = await fetch(`/api/workspace/repo?${params}`, { signal });
+      if (version !== this._navigationVersion) return;
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         this._error = body?.error ?? `HTTP ${res.status}`;
@@ -635,26 +646,30 @@ export class TrellisRepoDetail extends LitElement {
       }
       this._repo = await res.json();
     } catch (e) {
+      if (version !== this._navigationVersion) return;
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       this._error = `Failed to load repo: ${e}`;
       this._repo = null;
     } finally {
-      this._loading = false;
+      if (version === this._navigationVersion) {
+        this._loading = false;
+      }
     }
   }
 
-  private async _loadTerminal() {
+  private async _loadTerminal(signal?: AbortSignal) {
+    const version = this._navigationVersion;
+    const fetchSignal = signal ?? this._fetchController?.signal;
     try {
       const params = new URLSearchParams();
       if (this.repoName) params.set('repo', this.repoName);
-      const res = await fetch(`/api/terminals?${params}`);
+      const res = await fetch(`/api/terminals?${params}`, { signal: fetchSignal });
+      if (version !== this._navigationVersion) return;
       if (!res.ok) return;
       const all: AgentSnapshot[] = await res.json();
+      if (version !== this._navigationVersion) return;
       const filtered = all.filter(s => !s.terminal.slot);
-      const prevNames = this._snapshots.map(s => s.terminalName).join(',');
-      const nextNames = filtered.map(s => s.terminalName).join(',');
-      if (prevNames !== nextNames) {
-        this._snapshots = filtered;
-      }
+      this._snapshots = filtered;
       const next = filtered[0] ?? null;
       const name = next?.terminalName ?? '';
       if (name !== this._terminalName) {
@@ -667,7 +682,9 @@ export class TrellisRepoDetail extends LitElement {
       if (agentState?.state !== prev?.state || agentState?.memoryMb !== prev?.memoryMb || agentState?.lastError !== prev?.lastError) {
         this._agentState = agentState;
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+    }
   }
 
   private async _recoverOperation() {
