@@ -375,7 +375,7 @@ export class TrellisBacklogPanel extends LitElement {
 
   private _renderDetail(item: BacklogItem) {
     return html`
-      <h3>#${item.issueNumber}</h3>
+      <h3><a href="https://github.com/${item.issueRepo}/issues/${item.issueNumber}" target="_blank" rel="noopener" style="color:#60a5fa;text-decoration:none">#${item.issueNumber}</a></h3>
       <div class="sidebar-field">
         <div class="sidebar-label">Title</div>
         <div class="sidebar-value">${item.title}</div>
