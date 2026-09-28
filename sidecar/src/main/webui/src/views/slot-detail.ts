@@ -153,6 +153,8 @@ export class TrellisSlotDetail extends LitElement {
     .plan-icon-active { color: #93c5fd; }
     .plan-icon-pending { color: #555; }
     .plan-ref { font-family: monospace; font-size: 0.7rem; flex-shrink: 0; }
+    .plan-link { color: #60a5fa; text-decoration: none; cursor: pointer; }
+    .plan-link:hover { text-decoration: underline; }
     .plan-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .plan-summary {
       font-size: 0.75rem; color: #888; padding-top: 0.5rem;
@@ -430,25 +432,44 @@ export class TrellisSlotDetail extends LitElement {
   }
 
   private _renderPlanItems(items: PlanItem[], depth: number): unknown {
-    const shortRef = (ref: string) => {
-      const parts = ref.split('/');
-      return parts.length > 1 ? parts[parts.length - 1] : ref;
-    };
-
     return items.map(item => {
       const hasChildren = item.children && item.children.length > 0;
+      const issueUrl = this._issueUrl(item.ref);
+      const label = this._shortRef(item.ref);
       return html`
         <div class="plan-item ${item.done ? 'plan-item-done' : item.active ? 'plan-item-active' : 'plan-item-pending'}"
              style="padding-left: ${depth * 0.75}rem">
           <span class="${item.done ? 'plan-icon-done' : item.active ? 'plan-icon-active' : 'plan-icon-pending'}">
             ${item.done ? '✓' : item.active ? '●' : '○'}
           </span>
-          <span class="plan-ref">${shortRef(item.ref)}</span>
+          ${issueUrl
+            ? html`<a class="plan-ref plan-link" href=${issueUrl} target="_blank">${label}</a>`
+            : html`<span class="plan-ref">${label}</span>`}
           <span class="plan-title">${item.title}</span>
         </div>
         ${hasChildren ? this._renderPlanItems(item.children!, depth + 1) : nothing}
       `;
     });
+  }
+
+  private _shortRef(ref: string): string {
+    const parts = ref.split('/');
+    return parts.length > 1 ? parts[parts.length - 1] : ref;
+  }
+
+  private _issueUrl(ref: string): string | null {
+    const m = ref.match(/^(?:([^/]+)\/)?([^#]+)#(\d+)$/);
+    if (!m) return null;
+    let owner = m[1];
+    const repo = m[2];
+    const num = m[3];
+    if (!owner) {
+      const slotIssue = this._slot?.issue ?? '';
+      const ownerMatch = slotIssue.match(/^([^/]+)\//);
+      owner = ownerMatch ? ownerMatch[1] : '';
+    }
+    if (!owner) return null;
+    return `https://github.com/${owner}/${repo}/issues/${num}`;
   }
 
   private _hasActiveItem(items: PlanItem[]): boolean {
