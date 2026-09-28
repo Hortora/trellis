@@ -286,7 +286,7 @@ export class TrellisSlotDetail extends LitElement {
             : tabs.length > 0
             ? html`<trellis-terminal-tab-group .tabs=${tabs}></trellis-terminal-tab-group>`
             : html`
-              <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1.5rem;color:#666">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;color:#666">
                 <div style="font-size:0.9rem">No terminal sessions for this slot.</div>
                 <div style="font-size:0.8rem;color:#555">${this._slot!.repos[0] ?? 'unknown'} (primary)</div>
                 <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center">
