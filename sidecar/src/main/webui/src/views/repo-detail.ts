@@ -112,7 +112,6 @@ export class TrellisRepoDetail extends LitElement {
     .terminal-area pages-component-terminal { flex: 1; overflow: hidden; }
     .terminal-area trellis-terminal-pair-view { flex: 1; overflow: hidden; }
     pages-component-terminal .xterm { height: 100%; }
-    pages-component-terminal .xterm-viewport { overflow: hidden !important; }
 
     .empty-state {
       flex: 1; display: flex; flex-direction: column; align-items: center;

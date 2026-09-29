@@ -538,7 +538,7 @@ export class TrellisOrgDashboard extends LitElement {
     const total = list.length;
 
     return html`
-      <div class="modal-backdrop" @click=${this._closeModal}>
+      <div class="modal-backdrop" @click=${this._closeModal} @wheel=${(e: WheelEvent) => e.preventDefault()}>
         <div class="modal-frame" @click=${(e: Event) => e.stopPropagation()}>
           <div class="modal-header">
             <div class="modal-nav">
