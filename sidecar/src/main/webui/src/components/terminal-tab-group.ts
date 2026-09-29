@@ -56,7 +56,6 @@ export class TrellisTerminalTabGroup extends LitElement {
     .terminal-area { flex: 1; min-height: 0; overflow: hidden; display: flex; }
     .terminal-area pages-component-terminal { flex: 1; overflow: hidden; }
     pages-component-terminal .xterm { height: 100%; }
-    pages-component-terminal .xterm-viewport { overflow: hidden !important; }
     .empty { color: #666; padding: 2rem; font-style: italic; }
   `;
 
