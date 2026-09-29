@@ -1,5 +1,5 @@
 import { build, context } from "esbuild";
-import { cpSync, readFileSync, writeFileSync, readdirSync } from "fs";
+import { cpSync, readFileSync, writeFileSync, readdirSync, rmSync } from "fs";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -40,6 +40,7 @@ if (isWatch) {
   await ctx.watch();
   console.log("Watching for changes...");
 } else {
+  rmSync("dist", { recursive: true, force: true });
   await build(options);
 }
 
