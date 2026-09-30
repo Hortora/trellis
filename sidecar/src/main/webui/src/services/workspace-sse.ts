@@ -16,6 +16,8 @@ interface Subscription {
 let eventSource: EventSource | null = null;
 const subscriptions = new Set<Subscription>();
 
+let connectionCount = 0;
+
 function ensureConnection(): void {
   if (eventSource) return;
   const topicParams = ALL_WORKSPACE_TOPICS
@@ -23,6 +25,16 @@ function ensureConnection(): void {
       .join('&');
   eventSource = new EventSource(`/api/push?${topicParams}`);
   eventSource.addEventListener('message', handleMessage);
+  eventSource.addEventListener('open', () => {
+    connectionCount++;
+    if (connectionCount > 1) {
+      for (const sub of subscriptions) {
+        for (const topic of sub.topics) {
+          sub.callback(topic);
+        }
+      }
+    }
+  });
 }
 
 function handleMessage(e: Event): void {
@@ -64,4 +76,5 @@ export function subscribeWorkspace(
 export function _resetForTest(): void {
   if (eventSource) { eventSource.close(); eventSource = null; }
   subscriptions.clear();
+  connectionCount = 0;
 }
