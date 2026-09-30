@@ -72,6 +72,8 @@ export class TrellisOrgDashboard extends LitElement {
   @state() private _model: WorkspaceModel | null = null;
   @state() private _error: string | null = null;
   @state() private _loading = false;
+  @state() private _scanElapsed = 0;
+  private _scanTimer: ReturnType<typeof setInterval> | null = null;
   @state() private _root = '';
   @state() private _portfolioData = new Map<string, EpicSummary>();
   @state() private _recentRoots: string[] = [];
@@ -151,6 +153,9 @@ export class TrellisOrgDashboard extends LitElement {
     .progress-fill { height: 100%; background: #4ade80; border-radius: 2px; transition: width 0.3s; }
 
     .empty { color: #666; font-style: italic; font-size: 0.85rem; }
+    .scanning { animation: pulse 1.5s ease-in-out infinite; }
+    .scan-time { color: #555; font-size: 0.8rem; }
+    @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
     .error { color: #f87171; margin-bottom: 1rem; }
 
     .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
@@ -223,7 +228,7 @@ export class TrellisOrgDashboard extends LitElement {
       </div>
 
       ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
-      ${this._loading ? html`<div class="empty">Scanning...</div>` : nothing}
+      ${this._loading ? html`<div class="empty scanning">Scanning workspace${this._scanElapsed > 0 ? html` <span class="scan-time">${this._scanElapsed}s</span>` : nothing}</div>` : nothing}
       ${!this._loading && this._model ? this._renderModel(this._model) : nothing}
       ${!this._loading && !this._model && !this._error ? html`<div class="empty">Select a space from the switcher above.</div>` : nothing}
       ${this._modal ? this._renderModal() : nothing}
@@ -429,6 +434,7 @@ export class TrellisOrgDashboard extends LitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._unsubWorkspace?.();
+    if (this._scanTimer) { clearInterval(this._scanTimer); this._scanTimer = null; }
   }
 
   override updated(changed: Map<PropertyKey, unknown>) {
@@ -467,6 +473,8 @@ export class TrellisOrgDashboard extends LitElement {
     if (!this._root.trim()) return;
     this._loading = true;
     this._error = null;
+    this._scanElapsed = 0;
+    this._scanTimer = setInterval(() => { this._scanElapsed++; }, 1000);
     try {
       const res = await fetch(`/api/workspace?root=${encodeURIComponent(this._root.trim())}`);
       if (!res.ok) {
@@ -481,6 +489,7 @@ export class TrellisOrgDashboard extends LitElement {
     } catch (e) {
       this._error = `Failed to scan: ${e}`;
     } finally {
+      if (this._scanTimer) { clearInterval(this._scanTimer); this._scanTimer = null; }
       this._loading = false;
     }
   }
