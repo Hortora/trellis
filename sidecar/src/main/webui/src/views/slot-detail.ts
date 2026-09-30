@@ -510,6 +510,7 @@ export class TrellisSlotDetail extends LitElement {
     if (!this.workspaceRoot) return;
     const version = this._navigationVersion;
     const signal = this._fetchController?.signal;
+    this._error = null;
     try {
       const res = await fetch(`/api/workspace?root=${encodeURIComponent(this.workspaceRoot)}`, { signal });
       if (version !== this._navigationVersion) return;
