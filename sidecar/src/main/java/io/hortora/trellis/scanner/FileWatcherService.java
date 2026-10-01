@@ -78,6 +78,10 @@ public class FileWatcherService {
         return state != null ? state.model : null;
     }
 
+    public Set<Path> getWatchedRoots() {
+        return Set.copyOf(watches.keySet());
+    }
+
     public java.util.List<WorkspaceModel> allModels() {
         return watches.values().stream()
                       .map(ws -> ws.model)
